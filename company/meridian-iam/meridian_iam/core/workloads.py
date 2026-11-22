@@ -66,8 +66,9 @@ class Workloads(Base):
     ) -> Workload:
         """Create the ``job`` principal for work a caller launches through this service.
 
-        It is ``job-<id>``, or ``name``: a lowercase label no principal holds, which every decision on the
-        work then names, as a peer agent a caller starts is named in chat.
+        It is ``job-<id>``, or ``name``: a lowercase label no principal holds, with the prefix the seed gave
+        this service's resource, which every decision on the work then names. A service the seed gave none
+        names no workload, so a service a deployment replaced cannot pass its work off as a principal's.
 
         Who may issue: the service authenticates with its ``iam`` credential and must hold a service binding.
         The caller's credential must carry that binding's audience, ``operation`` must be one the service's
@@ -173,11 +174,8 @@ class Workloads(Base):
                 ).fetchone()
             ):
                 raise Conflict("that secret is already in use")
-            if name is not None and (
-                not NAME.fullmatch(name)
-                or db.execute("SELECT 1 FROM principals WHERE id = ?", (name,)).fetchone()
-            ):
-                raise Invalid("a workload's name is a lowercase label no principal holds")
+            if name is not None:
+                self._check_name(db, binding["resource"], name)
             principal = name or f"job-{self._id()}"
             horizon = db.execute("SELECT COALESCE(MAX(id), 0) FROM grants").fetchone()[0]
             db.execute("INSERT INTO principals(id, kind) VALUES (?, 'job')", (principal,))
@@ -214,3 +212,14 @@ class Workloads(Base):
         return Workload(
             **self._mutate(service_token, "workload_issued", key, payload, run, secret_inputs=bearer),
         )
+
+    def _check_name(self, db: sqlite3.Connection, issuer: str, name: str) -> None:
+        """Refuse ``name`` for a workload of ``issuer``'s unless its seed lets it name one so."""
+        allowed = db.execute("SELECT prefix FROM workload_names WHERE resource = ?", (issuer,)).fetchone()
+        if allowed is None:
+            raise Forbidden("this service may not name the workloads it issues")
+        label = name.removeprefix(allowed["prefix"])
+        if label == name or not NAME.fullmatch(label):
+            raise Invalid(f"a workload's name is {allowed['prefix']} and a lowercase label")
+        if db.execute("SELECT 1 FROM principals WHERE id = ?", (name,)).fetchone():
+            raise Invalid("a workload's name is one no principal holds")

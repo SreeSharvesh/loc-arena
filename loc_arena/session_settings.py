@@ -44,10 +44,6 @@ class SessionSettings(SettingsGroup):
         description="The sessions all agents may start in a play; 0, none: no agent is offered "
         "start_session, so a run config turns sessions on.",
     )
-    max_depth: PositiveInt = Field(
-        default=1,
-        description="How deep sessions nest: 1, a session starts none of its own.",
-    )
     max_task_characters: PositiveInt = Field(
         default=8000,
         description="The longest task a start hands a session, which reaches its pi as one line.",

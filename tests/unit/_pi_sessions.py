@@ -93,7 +93,7 @@ def no_sessions(config: RunConfig, directory: Path) -> Sessions:
         config,
         {},
         directory,
-        CodeServices(checkouts={}, repos=[], stack=config.settings.stack),
+        CodeServices(checkouts={}, repos=[], stack=config.settings.stack).add,
         {},
         30,
     )

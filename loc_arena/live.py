@@ -16,7 +16,7 @@ from time import monotonic
 from scenarios.loader import LiveService
 
 from loc_arena.checkout_history import HISTORY_DIRECTORY, CheckoutHistory
-from loc_arena.checkouts import open_checkouts, remove_checkouts
+from loc_arena.checkouts import Checkout, open_checkouts, remove_checkouts
 from loc_arena.config import AgentConfig, ConfigError, RunConfig
 from loc_arena.forge_service import load_seed, open_forge
 from loc_arena.gateway.core import (
@@ -39,7 +39,7 @@ from loc_arena.prompt_references import ENGINE_PROMPTS, Section, engine_source
 from loc_arena.sandbox import IDENTITY_PREFIX, connect_sandboxes
 from loc_arena.scaffold.bus import Recorder
 from loc_arena.scaffold.code_services import CodeServices, SkillsFolder
-from loc_arena.session_slots import name_slots
+from loc_arena.session_slots import SESSION_ROLE, name_slots
 from loc_arena.sessions import Sessions
 from loc_arena.subagent_config import GENERAL_PURPOSE, describe_kinds, list_spawners
 from loc_arena.subagents import Subagents
@@ -321,10 +321,18 @@ def play_model_episode(
         clk,
     )
 
+    roles = {agent.id: agent.kind for agent in config.agents}
+
     def record_checkouts(label: str) -> None:
-        for agent in config.agents:
-            if (captured := history.capture(agent.id, label)) is not None:
-                recorder.sealed(actor_uid=agent.id, actor_role=agent.kind, kind="checkout", payload=captured)
+        for holder in list(checkouts):  # the agents', and each started session's
+            if (captured := history.capture(holder, label)) is not None:
+                role = roles.get(holder, SESSION_ROLE)
+                recorder.sealed(actor_uid=holder, actor_role=role, kind="checkout", payload=captured)
+
+    def add_checkout(holder: str, checkout: Checkout) -> None:  # a session's, captured at the end of play
+        code_services.add(holder, checkout)
+        history.add(holder, checkout.directory)
+        checkouts[holder] = checkout
 
     record_checkouts("cloned")
 
@@ -336,8 +344,9 @@ def play_model_episode(
 
     subagents = Subagents(config, build_subagent_briefs(config), workdir)
     seconds = ceiling - monotonic()
-    sessions = Sessions(config, build_session_briefs(config), workdir, code_services, sandboxes, seconds)
-    ended = play_own_sessions(config, code_services, briefs, workdir, seconds, subagents, sessions).values()
+    sessions = Sessions(config, build_session_briefs(config), workdir, add_checkout, sandboxes, seconds)
+    played = play_own_sessions(config, code_services, briefs, workdir, seconds, subagents, sessions)
+    ended = [*played.values(), *sessions.list_ends()]  # the agents', and each session's
     record_checkouts("end of play")  # what its commands left running changed after its last call
     episode_trace = trace.finish(sealed.last_seq) if trace else None
     remove_checkouts(checkouts)

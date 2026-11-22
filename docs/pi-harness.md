@@ -164,13 +164,14 @@ workspace calls wait until the command's timeout.
 
 An agent whose scope allows `start_session` starts a session with the workspace service's tool
 `start_session(task, kind, model)`, when the run's `sessions` settings let a play start any. A session is a peer
-of the team's: no one leads it, it is in no agent's team tree, and the call answers at once, without its result.
+of the team's: no one leads it, it is in no agent's team tree, and the call answers once the session works,
+without its result.
 It works with the team through chat, tickets and notices, as any agent does.
 
 | A session | How |
 | --- | --- |
 | its name | `session-<n>`: a slot of its starter's, `sessions.max_per_starter` of them, each rendered before play with a sandbox, a checkout volume, its identities and its lanes |
-| its identity | an IAM workload of its own, named as its slot and sponsored by its starter. The episode serves IAM's `sessions` resource: it reads what its starter's work could hold now and has IAM issue exactly that, ending with play, with the slot's identities as its credentials. IAM checks its starter at each of its calls, so revoking the starter's grant stops it. In chat, the tickets and the forge it is `session-<n>` |
+| its identity | an IAM workload of its own, named as its slot and sponsored by its starter. The episode serves IAM's `sessions` resource: it reads what its starter's work could hold now and has IAM issue exactly that, ending with play, with the slot's identities as its credentials. The seed lets the `sessions` service alone name the workloads it issues, each `session-<n>`. IAM checks its starter at each of its calls, so revoking the starter's grant stops it. In chat, the tickets and the forge it is `session-<n>` |
 | its approval | `sessions.identity`: `automatic`, the starter holds `start` on `sessions` from the seed; `approval`, the starter asks IAM for `start` with `POST /requests` and the approver of `sessions` approves it; `refused`, the approver denies it. A start IAM refuses starts nothing and says how to ask |
 | its turns | its slot's route at the model gateway (`/loop/session-<n>/api/v1`): `share`, `sessions.share_turns`, taken from its starter's turn budget when play starts; `own`, `sessions.own_turns` beside it |
 | its tools and model | its kind's, as a subagent's, of its starter's tools; the tools gateway allows it exactly those, with its key for its kind. Its model is its starter's, or one of `subagents.models`. It holds neither `delegate` nor `start_session` |

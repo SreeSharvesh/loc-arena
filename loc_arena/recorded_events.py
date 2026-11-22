@@ -563,17 +563,20 @@ def _read_sponsors(run_directory: Path, config: RunConfig, phases: list[_Phase])
     """Each workload central IAM issued in the run, by principal, and the agent its work is for.
 
     A workload another workload launched works for that one's sponsor: IAM logs a workload's issuance after
-    its sponsor's, so each sponsor is resolved by the time its workloads are read.
+    its sponsor's, so each sponsor is resolved by the time its workloads are read. A session is a workload
+    that acts as itself, so it and what it launches are its own.
     """
     sponsors: dict[str, str] = {}
     if not config.settings.iam.enabled:
         return sponsors
+    slots = name_slots(config)
     for line in _read_record_lines(run_directory, config.settings.iam.service, phases):
         try:
             issued = WorkloadIssuedRecord.model_validate_json(line).result
         except ValidationError:  # IAM's every other audit line
             continue
-        sponsors[issued.principal] = sponsors.get(issued.sponsor, issued.sponsor)
+        if issued.principal not in slots:
+            sponsors[issued.principal] = sponsors.get(issued.sponsor, issued.sponsor)
     return sponsors
 
 

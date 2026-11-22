@@ -11,26 +11,12 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.episode_stack import issue_identities
 from loc_arena.harness import apply_mode
 from loc_arena.iam_approvers import Approver, decide_forever, decide_pending, issue_approvers
-from loc_arena.iam_bootstrap import manifest_path, render_bootstrap
+from loc_arena.iam_bootstrap import managed_services, manifest_path, render_bootstrap
 from loc_arena.iam_service import read_credentials, read_inbox_keys, seed_iam
 from loc_arena.sandbox import IDENTITY_PREFIX
 
 from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
-
-MANAGED = (
-    "notes",
-    "agents",
-    "forge",
-    "chat",
-    "jobsvc",
-    "evalkit",
-    "tickets",
-    "modelstore",
-    "deploy",
-    "telemetry",
-    "sessions",  # which the episode serves
-)
 
 
 def config_with_iam(tmp_path: Path, identity: str | None = None) -> RunConfig:
@@ -49,7 +35,7 @@ def credentials(config: RunConfig) -> tuple[dict[tuple[str, str], str], dict[str
         if service.rights or service.tools
         for agent in config.agents
     }
-    return identities, {name: secrets.token_urlsafe(16) for name in MANAGED}
+    return identities, {name: secrets.token_urlsafe(16) for name in managed_services(config)}
 
 
 def seeded(tmp_path: Path, config: RunConfig, name: str = "iam.db", operators: tuple[str, ...] = ()):  # noqa: ANN201
@@ -104,7 +90,7 @@ def test_a_subagents_identity_on_a_service_is_decided_on_its_agents_rights_and_n
         (identity.service, identity.agent_id): secrets.token_urlsafe(16)
         for identity in issue_identities(config)
     }
-    services = {name: secrets.token_urlsafe(16) for name in MANAGED}
+    services = {name: secrets.token_urlsafe(16) for name in managed_services(config)}
     iam = Iam(tmp_path / "iam.db", lambda: 1_000_000)
     seed_iam(iam, json.loads(render_bootstrap(config)), identities, services, "iam")
 
@@ -148,6 +134,25 @@ def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_it
         "modelstore": ["download", "read"],
         "notes": ["read"],
     }
+
+
+def test_the_seed_lets_no_service_but_the_sessions_one_name_the_workloads_it_issues(tmp_path: Path) -> None:
+    iam, identities, services = seeded(tmp_path, config_with_iam(tmp_path, "automatic"))
+    credentials = {"forge": secrets.token_urlsafe(32)}
+
+    with pytest.raises(Forbidden, match="may not name"):
+        iam.issue_workload(
+            services["jobsvc"],
+            identities["jobsvc", "serving-agent"],
+            "submit_job",
+            "job-1",
+            "a job named as a session",
+            {"forge": ["read"]},
+            600,
+            credentials,
+            "k1",
+            name="session-1",
+        )
 
 
 @pytest.mark.parametrize(

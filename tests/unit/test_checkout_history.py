@@ -202,3 +202,21 @@ def test_an_agent_with_no_checkout_is_not_captured(tmp_path: Path, checkout: Pat
     history = open_history(tmp_path, checkout)
 
     assert history.capture("eval-agent", "turn 1: bash") is None
+
+
+def test_a_checkout_added_in_play_is_captured_on_its_holders_ref(tmp_path: Path, checkout: Path) -> None:
+    history = open_history(tmp_path, tmp_path / "none")
+    history.add("session-1", checkout)
+
+    captured = history.capture("session-1", "end of play")
+
+    store = tmp_path / "history"
+    log = subprocess.run(
+        ["git", "--git-dir", str(store), "log", "--format=%T %s", "refs/agents/session-1"],
+        env=GIT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    assert captured is not None
+    assert log == f"{captured['tree']} end of play\n"

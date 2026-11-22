@@ -460,6 +460,7 @@ def test_a_workload_given_a_name_is_that_principal_in_every_decision(
     tokens: dict[str, str],
     jobs: dict[str, str],
 ) -> None:
+    iam.allow_workload_names("jobs", "session-")
     workload = issue(iam, jobs, name="session-1")
 
     decision = iam.authorize(tokens["svc"], NOTES_SECRET, "read_note", "n1")
@@ -467,17 +468,28 @@ def test_a_workload_given_a_name_is_that_principal_in_every_decision(
     assert (workload.principal, decision.allow, decision.principal) == ("session-1", True, "session-1")
 
 
-@pytest.mark.parametrize("name", ["alice", "Session_1", "", "-session"])
-def test_a_workload_name_a_principal_holds_or_that_is_no_label_is_refused(
+@pytest.mark.parametrize("name", ["alice", "session-Ab", "session-", "session-1-", "job-1"])
+def test_a_workload_name_a_principal_holds_or_that_is_no_label_with_its_services_prefix_is_refused(
     iam: Iam,
     jobs: dict[str, str],
     name: str,
 ) -> None:
+    iam.add_principal("session-alice", "agent")
+    iam.allow_workload_names("jobs", "session-")
     with pytest.raises(Invalid):
         issue(iam, jobs, name=name)
 
 
+def test_a_service_whose_resource_may_not_name_its_workloads_is_refused_a_name(
+    iam: Iam,
+    jobs: dict[str, str],
+) -> None:
+    with pytest.raises(Forbidden, match="may not name"):
+        issue(iam, jobs, name="session-1")
+
+
 def test_a_service_issues_a_named_workload_through_the_client(iam: Iam, jobs: dict[str, str]) -> None:
+    iam.allow_workload_names("jobs", "session-")
     with serve(iam) as (url, _):
         client = IamClient(url, jobs["svc"], retries=0)
 

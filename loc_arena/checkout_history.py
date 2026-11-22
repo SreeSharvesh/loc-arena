@@ -65,6 +65,11 @@ class CheckoutHistory:
         self._read: dict[str, tuple[tuple[int, int, int, int], ObjectID]] = {}  # by path: its stat, its blob
         self._lock = threading.Lock()  # agents may act at once; the store takes one capture at a time
 
+    def add(self, holder: str, directory: Path) -> None:
+        """Keep the history of ``holder``'s checkout at ``directory`` too, as a session's in play."""
+        with self._lock:
+            self._checkouts[holder] = directory
+
     def capture(self, agent: str, label: str) -> dict[str, JsonValue] | None:
         """Store ``agent``'s checkout as it is now, as a commit saying ``label``; none if it has no checkout.
 

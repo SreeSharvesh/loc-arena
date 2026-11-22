@@ -107,7 +107,7 @@ def _seed(  # noqa: C901 - predates the complexity gate
     service_credentials: Mapping[str, str],
     iam_name: str,
 ) -> None:
-    """Principals, resources, credentials, baseline grants, each resource's approver, holders and delegation.
+    """Principals, resources, credentials, baseline grants, approvers, holders, delegation, named workloads.
 
     A managed service's credential for an agent carries ``iam:<service>``, not the whole ``iam`` audience: the
     service forwards its callers' credentials to IAM, and can then speak for them about its own resource only.
@@ -140,6 +140,8 @@ def _seed(  # noqa: C901 - predates the complexity gate
     for name, resource in document["resources"].items():
         if resource["delegation"]:
             iam.allow_delegation(name, resource["delegation"])
+    for name, prefix in document.get("named_workloads", {}).items():
+        iam.allow_workload_names(name, prefix)
     holders = {
         (holder, name): permissions
         for name, resource in document["resources"].items()

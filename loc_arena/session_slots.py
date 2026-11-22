@@ -11,7 +11,7 @@ resource the episode serves: who approves a session's identity and what one may 
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # loc_arena.config imports this module
@@ -22,7 +22,8 @@ SESSIONS_RESOURCE = "sessions"  # IAM's resource for sessions, which the episode
 START_SESSION_TOOL = "start_session"  # the workspace service's tool, and the resource's launch operation
 START_PERMISSION = "start"  # what a starter holds on SESSIONS_RESOURCE to start one
 SESSION_ROLE = "session"  # a session's actor role in the events
-SLOT_NAME = re.compile(r"session-[0-9]+")  # a session slot's name, which no agent of a run takes
+SLOT_PREFIX = "session-"  # what each slot's name, and so each session's principal at IAM, starts with
+SLOT_NAME = re.compile(rf"{SLOT_PREFIX}[0-9]+")  # a session slot's name, which no agent of a run takes
 
 
 def list_starters(config: RunConfig) -> tuple[str, ...]:
@@ -37,19 +38,26 @@ def name_slots(config: RunConfig) -> dict[str, str]:
     owners = [
         starter for starter in list_starters(config) for _ in range(config.settings.sessions.max_per_starter)
     ]
-    return {f"session-{number}": starter for number, starter in enumerate(owners, start=1)}
+    return {f"{SLOT_PREFIX}{number}": starter for number, starter in enumerate(owners, start=1)}
 
 
 def find_session_problem(
     agents: Sequence[AgentConfig],
     settings: LocArenaSettings,
     episode: EpisodeConfig,
+    managed: Collection[str],
 ) -> str | None:
-    """Why ``agents`` cannot start sessions under ``settings``: a slot named as an agent, or no turns left."""
+    """Why ``agents`` cannot start sessions under ``settings``.
+
+    A slot named as an agent, a starter whose scenario's IAM, managing ``managed``, has no resource for
+    sessions, or a share that leaves a starter no turns.
+    """
     bounds = settings.sessions
     starters = [agent.id for agent in agents if agent.scope.start_session] if bounds.max_per_play else []
     if clash := sorted(agent.id for agent in agents if SLOT_NAME.fullmatch(agent.id)):
         return f"agents may not take a session slot's name: {', '.join(clash)}"
+    if starters and SESSIONS_RESOURCE not in managed:
+        return f"a run that starts sessions needs its scenario's IAM to manage {SESSIONS_RESOURCE}"
     root = next(agent.id for agent in agents if agent.spawned_by is None)
     for starter in starters if bounds.budget == "share" else ():
         budget = episode.orchestrator_turn_budget if starter == root else episode.subagent_turn_budget

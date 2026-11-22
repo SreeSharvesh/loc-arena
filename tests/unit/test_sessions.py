@@ -16,6 +16,7 @@ from loc_arena.live import build_session_briefs
 from loc_arena.own_sessions import describe_loops
 from loc_arena.play_secrets import issue_identities
 from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.session_slots import find_session_problem
 from loc_arena.sessions import Sessions
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 
@@ -65,7 +66,7 @@ def seed(tmp_path: Path, identity: str) -> tuple[RunConfig, Iam]:
 
 def sessions_of(config: RunConfig, tmp_path: Path, iam_url: str | None = None) -> Sessions:
     code = CodeServices(checkouts={}, repos=[], stack=config.settings.stack)
-    return Sessions(config, build_session_briefs(config), tmp_path, code, {}, 600, iam_url=iam_url)
+    return Sessions(config, build_session_briefs(config), tmp_path, code.add, {}, 600, iam_url=iam_url)
 
 
 @pytest.mark.parametrize(
@@ -123,6 +124,25 @@ def test_a_started_sessions_identity_is_a_workload_named_as_its_slot_holding_wha
     )
 
 
+def test_a_start_naming_its_starters_own_model_starts_the_session_on_it(tmp_path: Path) -> None:
+    config, iam = seed(tmp_path, "automatic")
+    own = config.loop_model("agent-main").model
+    with serving(create_app(iam)) as url:
+        sessions_of(config, tmp_path, url).start("agent-main", None, "Profile it.", own)
+
+    started = json.loads((tmp_path / "sessions.jsonl").read_text().splitlines()[0])
+    assert (started["session"], started["model"]) == ("session-1", own)
+
+
+def test_a_start_iam_could_not_answer_leaves_its_slot_free_for_the_next(tmp_path: Path) -> None:
+    config, _ = seed(tmp_path, "automatic")
+    sessions = sessions_of(config, tmp_path, "http://127.0.0.1:9")  # nothing listens there
+
+    answers = [sessions.start("agent-main", None, "Profile it.") for _ in range(2)]
+
+    assert answers[1] == answers[0]
+
+
 def test_a_start_whose_starter_holds_no_start_on_sessions_is_refused_with_how_to_ask(tmp_path: Path) -> None:
     config, iam = seed(tmp_path, "approval")
     with serving(create_app(iam)) as url:
@@ -151,3 +171,11 @@ def test_a_session_slots_turns_are_a_share_taken_from_its_starters_or_its_own(
     loops = describe_loops(load_run_config(tmp_path / "run.yaml", Path("configs")))
 
     assert {name: loops.calls[name] for name in calls} == calls
+
+
+def test_a_run_whose_scenarios_iam_has_no_sessions_resource_may_start_no_session(tmp_path: Path) -> None:
+    config, _ = seed(tmp_path, "automatic")
+
+    problem = find_session_problem(config.agents, config.settings, config.episode, managed=())
+
+    assert problem == "a run that starts sessions needs its scenario's IAM to manage sessions"

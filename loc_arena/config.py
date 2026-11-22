@@ -573,7 +573,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         if (spec := models.get(models_file.agent_roles.get(a.id, AGENT_ROLE)))
     }
     unheld = find_unheld_subagent_tool(document.subagents, agents, settings, own)
-    sessions = find_session_problem(agents, settings, document.episode)
+    sessions = find_session_problem(agents, settings, document.episode, manifests)
     if problem := next(
         filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld, sessions)),
         None,

@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
@@ -28,7 +28,7 @@ import httpx2
 from mcp.server import MCPServer
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 
-from loc_arena.checkouts import open_checkout
+from loc_arena.checkouts import Checkout, open_checkout
 from loc_arena.config import RunConfig
 from loc_arena.iam_bootstrap import SERVICE_CREDENTIAL_PREFIX
 from loc_arena.iam_seed import load_seed
@@ -39,12 +39,12 @@ from loc_arena.own_sessions import (
     PI_ENVIRONMENT,
     Child,
     PiSession,
+    SessionEnd,
     loop_working_directory,
     write_pi_home,
 )
 from loc_arena.sandbox import SandboxClient
-from loc_arena.scaffold.code_services import CodeServices
-from loc_arena.session_slots import SESSIONS_RESOURCE, START_SESSION_TOOL, name_slots
+from loc_arena.session_slots import SESSIONS_RESOURCE, START_PERMISSION, START_SESSION_TOOL, name_slots
 from loc_arena.subagent_config import GENERAL_PURPOSE, describe_kinds
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
@@ -72,13 +72,21 @@ class Sessions:
         config: RunConfig,
         briefs: Mapping[str, Mapping[str, str]],
         directory: Path,
-        code: CodeServices,
+        add_checkout: Callable[[str, Checkout], None],
         sandboxes: Mapping[str, SandboxClient],
         seconds: float,
         iam_url: str | None = None,
     ) -> None:
-        """Sessions on the slots of ``briefs``, kept in ``directory``, in ``code``, until ``seconds`` pass."""
-        self._config, self._briefs, self._code, self._sandboxes = config, briefs, code, sandboxes
+        """Sessions on the slots of ``briefs``, kept in ``directory``, until ``seconds`` pass.
+
+        A started session's checkout goes to ``add_checkout``, which serves it beside the agents' checkouts.
+        """
+        self._config, self._briefs, self._add_checkout, self._sandboxes = (
+            config,
+            briefs,
+            add_checkout,
+            sandboxes,
+        )
         self._homes, self._record = directory / LOOPS_DIRECTORY, append_to(directory / SESSIONS_FILE)
         self._slots = {slot: starter for slot, starter in name_slots(config).items() if slot in briefs}
         self._deadline = monotonic() + seconds
@@ -87,6 +95,7 @@ class Sessions:
         self._taken: dict[str, str] = {}  # each slot a session took, with its starter
         self._working: dict[str, PiSession] = {}
         self._ending: list[PiSession] = []  # what play's end stopped, still to exit
+        self._ends: list[SessionEnd] = []
         self._lock = threading.Lock()
         self._ended = False
 
@@ -108,21 +117,21 @@ class Sessions:
         No ``kind`` is general-purpose; no ``model``, or the starter's own, is the starter's.
         """
         kind = kind or GENERAL_PURPOSE
+        if model == self._config.loop_model(caller).model:
+            model = None
         with self._lock:
             if refusal := self._refuse(caller, kind, task, model):
                 return {"error": refusal}
-            if model == self._config.loop_model(caller).model:
-                model = None
             slot = next(
                 slot for slot, starter in self._slots.items() if starter == caller and slot not in self._taken
             )
             self._taken[slot] = caller
         try:
             workload = self._issue(slot, caller)
-        except IdentityRefusedError as refused:
+        except (IdentityRefusedError, httpx2.HTTPError, OSError) as refused:  # IAM's no, or no answer from it
             with self._lock:
                 self._taken.pop(slot)  # the slot is free again: IAM gave it no identity
-            return {"error": str(refused)}
+            return {"error": str(refused) or f"IAM did not answer: {type(refused).__name__}"}
         tools = list_subagent_tools(self._config, caller, [kind], delegates=False)
         started = {
             "session": slot,
@@ -132,7 +141,7 @@ class Sessions:
         }
         self._write(started | {"task": task, "tools": list(tools), "workload": workload.model_dump()})
         try:
-            self._code.add(slot, open_checkout(self._config, slot, self._sandboxes[slot]))
+            self._add_checkout(slot, open_checkout(self._config, slot, self._sandboxes[slot]))
             session = self._launch(
                 slot,
                 caller,
@@ -146,6 +155,7 @@ class Sessions:
             if self._ended or not session.prompt(task):
                 self._write({"session": slot, "end": {"reason": "failed", "stderr": "its pi took no task"}})
                 session.stop()
+                self._ending.append(session)  # play's end waits for it too
                 return {"error": f"{slot} could not start: its pi took no task"}
             self._working[slot] = session
         return {
@@ -171,8 +181,13 @@ class Sessions:
             ending = dict(self._working)
         for slot, session in ending.items():
             end = session.stop()
+            self._ends.append(end)
             self._write({"session": slot, "end": {"reason": end.reason, "stderr": end.stderr}})
-        self._ending = list(ending.values())
+        self._ending.extend(ending.values())
+
+    def list_ends(self) -> list[SessionEnd]:
+        """How each session that worked in play ended, once ``end`` stopped them."""
+        return list(self._ends)
 
     def wait(self, seconds: float) -> None:
         """Wait for what ``end`` stopped to exit, killing what is still there after ``seconds``."""
@@ -265,9 +280,15 @@ class IdentityRefusedError(Exception):
 def _read[T](reply: httpx2.Response, shape: type[T]) -> T:
     """``reply``'s body as ``shape``; ``IdentityRefusedError`` with IAM's reason if it gave none."""
     if reply.status_code == HTTPStatus.FORBIDDEN:
-        reason = reply.json().get("message", "")
+        try:
+            reason = str(reply.json()["message"])
+        except (ValueError, KeyError, TypeError):  # not IAM's refusal body
+            reason = reply.text[-300:]
         raise IdentityRefusedError(
-            f"IAM refused the session's identity: {reason}. Ask IAM for start on sessions (POST /requests)",
+            f"IAM refused the session's identity: {reason}. Ask IAM for it from your sandbox: "
+            f'POST /requests with {{"resource": "{SESSIONS_RESOURCE}", '
+            f'"permissions": ["{START_PERMISSION}"], '
+            '"reason": "..."}; once it is approved, call start_session again',
         )
     if not reply.is_success:
         raise IdentityRefusedError(
