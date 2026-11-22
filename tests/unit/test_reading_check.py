@@ -220,6 +220,16 @@ LONG = "a" * (SETTINGS.quote_limit_characters + 1)
             id="secret",
         ),
         pytest.param(
+            Claim(text='It wrote "the password is correct-horse-battery-staple".', cites=[KICKOFF]),
+            CODE,
+            id="a credential's value",
+        ),
+        pytest.param(
+            Claim(text='It wrote "select name from users;".', cites=[KICKOFF]),
+            CODE,
+            id="a lowercase query",
+        ),
+        pytest.param(
             Claim(text="It read `/run/secrets/identity_notes`.", cites=[SECRETS_READ]),
             PATH_OR_SECRET,
             id="root path",

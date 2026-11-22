@@ -30,6 +30,7 @@ make view                             # open the latest run's report, from logs/
 make explore                          # build and open the run explorer over the runs under logs/
 make read RUN_DIR=<run directory>     # an agent reads one run; code checks each claim (ASK='...' for one question)
 make watch                            # each agent's steps while a run plays
+make replay RUN_DIR=<run directory>   # one JSON file of the run and both plays that a visual page is built from
 ```
 
 A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development container, read

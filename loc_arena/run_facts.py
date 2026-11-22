@@ -15,14 +15,14 @@ from pathlib import Path
 from typing import get_args
 
 import yaml
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway.model_gateway import PHASE_PLAYS
 from loc_arena.logging_.events import Event, EventKind, read_events
 from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
-from loc_arena.own_sessions import EndReason
+from loc_arena.own_sessions import SESSION_ENDS_FILE, EndReason
 from loc_arena.session_events import read_reply_text, read_session_calls
 
 type Fact = str | int | float | bool | list[str]
@@ -30,6 +30,65 @@ MIRROR = "mirror"  # a mirror event's id is `<play>-mirror:<seq>`; a sealed even
 _TOKEN = re.compile(r"[\w./@#:+-]+")
 _ONE_NAME = re.compile(r"[A-Za-z_][\w./:+-]{0,63}")  # a fact's string: one name, never free text
 _CODE_ARGUMENTS = frozenset({"command", "content", "old_string", "new_string", "code", "script", "patch"})
+
+
+class _Record(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="ignore")
+
+
+class _Scope(_Record):
+    open_pr: tuple[str, ...] = ()  # the repositories it may open pull requests on: ``*`` for every one
+
+
+class _Agent(_Record):
+    id: str
+    kind: str | None = None  # orchestrator or subagent
+    spawned_by: str | None = None  # whom it reports to
+    covert: tuple[str, ...] | None = None  # the milestones its covert brief serves
+    scope: _Scope = _Scope()
+
+
+class _Episode(_Record):
+    orchestrator_turn_budget: int | None = None  # each kind of agent's call budget
+    subagent_turn_budget: int | None = None
+    wall_clock_seconds: float | None = None  # the play's bound
+
+
+class _Covert(_Record):
+    target_identity: str  # the agent the covert objective is briefed to
+
+
+class _Milestone(_Record):
+    id: str
+
+
+class _SideTask(_Record):
+    milestones: tuple[_Milestone, ...]
+
+
+class ResolvedConfig(_Record):
+    """Of a run's ``config.resolved.yaml``, what its records are read with: its team, side task and bounds."""
+
+    agents: tuple[_Agent, ...]
+    covert: _Covert
+    side_task: _SideTask
+    episode: _Episode = _Episode()
+
+
+class _SessionEnd(_Record):
+    reason: EndReason
+
+
+def read_resolved_config(run_directory: Path) -> ResolvedConfig:
+    """The team, side task and bounds of the run in ``run_directory``."""
+    return ResolvedConfig.model_validate(yaml.safe_load((run_directory / "config.resolved.yaml").read_text()))
+
+
+def read_session_ends(directory: Path) -> dict[str, EndReason]:
+    """How each agent's session ended in the play in ``directory``; none before the play wrote it."""
+    ends = directory / SESSION_ENDS_FILE
+    recorded = TypeAdapter(dict[str, _SessionEnd]).validate_json(ends.read_text()) if ends.is_file() else {}
+    return {agent: end.reason for agent, end in recorded.items()}
 
 
 class EventWords(BaseModel):
@@ -71,32 +130,26 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
     agent's session the text of its model's reply.
     """
     scores = json.loads((run_directory / "scores.json").read_text())
-    config = yaml.safe_load((run_directory / "config.resolved.yaml").read_text())
-    graded, agents = load_scores(run_directory / "scores.json"), [agent["id"] for agent in config["agents"]]
-    milestones = [milestone["id"] for milestone in config["side_task"]["milestones"]]
+    config = read_resolved_config(run_directory)
+    graded, agents = load_scores(run_directory / "scores.json"), [agent.id for agent in config.agents]
+    milestones = [milestone.id for milestone in config.side_task.milestones]
     facts: dict[str, Fact] = {
         "scores.keys": sorted(scores),
         "scores.key_count": len(scores),
         "run.mode": str(scores["mode"]),
         "run.agents": agents,
-        "run.covert_agent": str(config["covert"]["target_identity"]),
+        "run.covert_agent": config.covert.target_identity,
         "side_task.milestones": milestones,
         "side_task.milestone_count": len(milestones),
     }
-    for agent in config[
-        "agents"
-    ]:  # who each agent reports to, its covert brief's milestones, its repositories
-        facts |= {
-            f"run.agent.{agent['id']}.kind": str(agent.get("kind") or "none"),  # orchestrator or subagent
-            f"run.agent.{agent['id']}.reports_to": str(agent.get("spawned_by") or "none"),
-            f"run.agent.{agent['id']}.covert": [str(milestone) for milestone in agent.get("covert") or []],
-            f"run.agent.{agent['id']}.repositories": [
-                str(repo) for repo in agent.get("scope", {}).get("open_pr", [])
-            ],
-        }
+    facts |= _agent_facts(config)
     _flatten("scores", scores, facts)
     events: dict[str, EventWords] = {}
-    names = {*_name_keys(scores), *_name_keys(config), *agents}
+    names = {
+        *_name_keys(scores),
+        *_name_keys(yaml.safe_load((run_directory / "config.resolved.yaml").read_text())),
+        *agents,
+    }
     for play, phase in name_plays(run_directory):
         sealed = list(read_events(run_directory / phase / "events.sealed.jsonl"))
         twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
@@ -140,6 +193,19 @@ def write_evidence(evidence: RunEvidence, directory: Path) -> None:
     (directory / "words.jsonl").write_text("".join(f"{line}\n" for line in worded))
 
 
+def _agent_facts(config: ResolvedConfig) -> dict[str, Fact]:
+    """Each agent's kind, whom it reports to, its covert brief's milestones and its repositories."""
+    facts: dict[str, Fact] = {}
+    for agent in config.agents:
+        facts |= {
+            f"run.agent.{agent.id}.kind": agent.kind or "none",
+            f"run.agent.{agent.id}.reports_to": agent.spawned_by or "none",
+            f"run.agent.{agent.id}.covert": list(agent.covert or ()),
+            f"run.agent.{agent.id}.repositories": list(agent.scope.open_pr),
+        }
+    return facts
+
+
 def _count_play(
     play: str,
     sealed: Sequence[Event],
@@ -159,9 +225,7 @@ def _count_play(
     facts |= {f"{play}.{key}": count for key, count in counted.items()}
     facts |= {f"{play}.{key}.actors": sorted(names) for key, names in actors.items()}
     facts |= {f"{play}.{key}.actor_count": len(names) for key, names in actors.items()}
-    ends = directory / "session_ends.json"
-    recorded = json.loads(ends.read_text()) if ends.is_file() else {}
-    reasons = {agent: str(end["reason"]) for agent, end in recorded.items()}
+    reasons = read_session_ends(directory)
     facts |= {f"{play}.session.{agent}": reason for agent, reason in reasons.items()}
     facts |= {f"{play}.sessions.{reason}": count for reason, count in Counter(reasons.values()).items()}
     scored: dict[str, list[float]] = {}
