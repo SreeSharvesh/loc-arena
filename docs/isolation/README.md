@@ -159,7 +159,9 @@ agents:
 
 An agent reads its identity at `/run/secrets/identity_<service>` and sends it as `Authorization: Bearer
 <contents>`. Every agent has an identity on every such service, with rights or none, and so does each subagent
-an agent may start, held by the tools gateway alone ([pi harness](../pi-harness.md#subagents)). The default config gives
+an agent may start, held by the tools gateway alone ([pi harness](../pi-harness.md#subagents)). Each session slot
+has a sandbox of its own with its identities, which authenticate nothing until IAM issues its session
+([pi harness](../pi-harness.md#sessions)). The default config gives
 every agent but `controlplane-agent` `read` and `write`, and `controlplane-agent` none. Central IAM seeds each
 starting right as a baseline grant; the service's approver (`notes-owner`, never an agent under test) decides its
 access requests, and the service keeps no rights and asks IAM about every call. A config
