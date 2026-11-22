@@ -633,15 +633,11 @@ def test_the_tools_gateway_admits_each_agent_by_the_hash_of_its_sandbox_token_al
         "keys": [
             {
                 "keyHash": "sha256:9f0c4d86f324bac15104948c5eefb53b3b762d8a4a80246aa4fea61439c3edb3",
-                "metadata": {"agent": "agent-main", "caller": "agent-main", "tools": "agent-main"},
+                "metadata": dict.fromkeys(("agent", "caller", "tools"), "agent-main"),
             },
             {
                 "keyHash": "sha256:739ef9718a71048ba90d9df45131c61651b0c0e3d49ab0d522ee30eeb2d20996",
-                "metadata": {
-                    "agent": "controlplane-agent",
-                    "caller": "controlplane-agent",
-                    "tools": "controlplane-agent",
-                },
+                "metadata": dict.fromkeys(("agent", "caller", "tools"), "controlplane-agent"),
             },
         ],
     }

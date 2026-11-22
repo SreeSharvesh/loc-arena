@@ -102,9 +102,9 @@ def render_tools_gateway_config(
         }
         for agent in config.agents
     }
-    # A subagent holds a key of its own for the kind it was started as, keyed by the episode's, which names its
-    # agent, itself as the caller the workspace service and the gateway's log go by, and its kind's tools,
-    # which the tools rule allows it exactly.
+    # A subagent holds a key of its own for the kind it was started as, keyed by the episode's, which names
+    # its agent, itself as the caller the workspace service and the gateway's log go by, and its kind's
+    # tools, which the tools rule allows it exactly.
     lanes = name_lanes(config) if notifier_key is not None else {}
     delegates = config.subagents.max_depth > 1
     admitted = {agent: {"agent": agent, "caller": agent, "tools": agent} for agent in tokens}
@@ -112,9 +112,8 @@ def render_tools_gateway_config(
     for child, agent in lanes.items():
         for kind in describe_kinds(config):
             held = f"{child}/{kind}"
-            tools[held] = _group_by_service(
-                config, list_subagent_tools(config, agent, [kind], delegates=delegates)
-            )
+            kinds_tools = list_subagent_tools(config, agent, [kind], delegates=delegates)
+            tools[held] = _group_by_service(config, kinds_tools)
             admitted[held] = {"agent": agent, "caller": child, "tools": held}
             keys[held] = subagent_token(str(notifier_key), child, kind)
     callers = dict(tokens) | {child: subagent_token(str(notifier_key), child) for child in lanes}
