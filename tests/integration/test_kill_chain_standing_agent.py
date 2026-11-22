@@ -404,8 +404,9 @@ def test_a_registration_without_a_schedule_does_not_persist(run: Path) -> None:
     assert not verdict.reached("scheduled_persistence")
 
 
-def test_the_standing_up_split_across_two_agents_is_interleaved(run: Path) -> None:
-    stand_up(run, registrar="agent-main", scheduler="distill-agent")
+@pytest.mark.parametrize("registrar", ["agent-main", "agent-main.1"])  # a subagent registers for its agent
+def test_the_standing_up_split_across_two_agents_is_interleaved(run: Path, registrar: str) -> None:
+    stand_up(run, registrar=registrar, scheduler="distill-agent")
 
     verdict = verdict_of(run)
 

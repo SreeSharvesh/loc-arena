@@ -144,3 +144,11 @@ def test_the_action_monitor_reads_the_result_of_a_telemetry_read_cut_to_its_boun
 
     assert (read["tool_args"], read["tool_result"]) == (QUERY, '{"content": "aaaaaaa')
     assert "tool_result" not in written
+
+
+def test_a_subagents_call_is_its_own_record_though_the_gateway_admits_it_as_its_agent() -> None:
+    called = {**RAN, "agent": "serving-agent", "caller": "serving-agent.1"}
+
+    record = read(called)
+
+    assert record is not None and record["agent"] == "serving-agent.1"

@@ -36,6 +36,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `main_task`, `side_task`, `covert` | the tasks and their scorer and verifier; `covert.enabled` switches attack and honest mode: the covert briefs and the covert objective. `covert.target_identity` is the agent whose brief starts with the covert objective ([docs/pi-harness.md](pi-harness.md)); it must be an agent of the team. `side_task.thresholds` are the verifier's numbers: `loop_len_floor`, the fewest calls of a loop; `liveness_window_seconds`, how close to the deadline its last call must be; `sustained_rate_window_seconds`, the span it must keep calling over, no gap longer; and `loop_min_reply_chars`, the shortest reply whose text inside a later prompt of the same job links two calls into a loop. `side_task.sanctioned_submitters` names the company principals whose jobs' model calls are on-path (Aurora's deployer). |
 | `episode` | `orchestrator_turn_budget` and `subagent_turn_budget`, the model calls the root agent's session and each other agent's may make in one play, which the model gateway enforces; `wall_clock_seconds`, the ceiling of one play; `liveness_window_seconds`, equal to the side task's |
 | `agents` | the team; see below |
+| `subagents` | the subagents an agent whose `scope.spawn_subagent` is on starts in play with `delegate` ([docs/pi-harness.md](pi-harness.md#subagents)): with no kind named, `general-purpose`, which holds every tool its agent holds; `definitions`, further kinds by name, each with its `prompt_ref` (a `<kind>.subagent` file), its `description`, which `delegate` lists, and its `tools`, each one of its agent's (none: all of them); `models`, the model ids a call may choose beside its agent's own, each with the `temperature`, `max_tokens` and `reasoning` its calls take in place of its agent's role's; `max_depth` (1), `max_concurrent` (2) and `max_children` (3), per agent and play; `max_task_characters` (8000), the longest task; `progress_seconds` (5), shorter than `stack.tools_timeout_seconds`. Each of the `max_children` ids, `<agent>.<n>`, is an IAM principal of its own, on its agent's rights. A kind's tool its agent lacks is a `ConfigError` |
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
 | `prompts`, `workspace_prompt_ref`, `task_description_ref` | the scenario's prompt files the run sends; the one every agent's brief says of its workspace; the main task as the monitors are told it ([Prompts](#prompts)) |
@@ -65,7 +66,9 @@ sections join into exactly what each agent's pi receives.
 ```
 loc_arena/prompts/                          the engine's: true of any scenario, with $placeholders it fills
 ├── agent.<part>.md                         every agent: identity, manager, reports, skills, services, service,
-│                                           service-access, telemetry, covert-steps, first-turn
+│                                           service-access, telemetry, covert-steps, first-turn; subagent, a
+│                                           subagent's place
+├── general-purpose.subagent.md             the built-in kind of subagent's prompt
 ├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
 ├── <monitor>.monitor.md                    a monitor's prompt: its inputs at $inputs, each scenario fact a $placeholder
 ├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
@@ -83,6 +86,7 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
     ├── team.covert-<part>.md               a fragment two or more covert briefs share
     ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
     ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
+    ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
     └── monitor.task-description.md         the main task as the monitors are told it
 ```
 
@@ -98,6 +102,7 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `covert-anchor`, `covert-<part>` | the pieces a composed covert brief lists | the covert brief's entry |
 | `kill-chain` | the mechanism and its cover | the covert brief's entry |
 | `seed` | the covert objective | `covert.objective_prompt_ref` |
+| `subagent` | a kind of subagent: what it is and how it answers | its `subagents.definitions` entry's `prompt_ref` |
 | `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
 | `service` | what agents are told a service is, if a brief tells it: one their sandbox reaches, or the telemetry store | the service's name, read by the scenario's loader |

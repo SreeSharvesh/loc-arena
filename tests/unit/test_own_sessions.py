@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import json
-import sys
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,7 +11,7 @@ from time import monotonic
 
 import pytest
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
+from loc_arena.gateway.core import GATEWAY_URL_VARIABLE
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import (
     TASK,
@@ -24,76 +23,31 @@ from loc_arena.own_sessions import (
     record_session_ends,
 )
 from loc_arena.settings import AgentsUpstream
-from loc_arena.task import TOOLS_URL_VARIABLE
+from loc_arena.subagents import Subagents
 from loc_arena.tool_records import append_to
 from pydantic import HttpUrl
 
-# A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
-PI = f"""#!{sys.executable}
-import json, os, sys, time
-from pathlib import Path
+from tests.unit._pi_sessions import BRIEFS, install_pi, write_home
 
-home = Path(os.environ["HOME"])
-(home / "cwd").write_text(os.getcwd())
-
-
-def read(name, default=""):
-    return (home / name).read_text().strip() if (home / name).exists() else default
-
-
-def say(**event):
-    print(json.dumps(event), flush=True)
-
-
-for line in sys.stdin:
-    prompt = json.loads(line)
-    with (home / "runs").open("a") as runs:
-        runs.write(prompt["message"] + " | " + " ".join(sys.argv[1:]) + "\\n")
-    if read("exit"):
-        sys.exit(int(read("exit")))
-    say(type="response", command="prompt", success=True, data=dict(disposition="started"))
-    time.sleep(float(read("sleep", "0")))
-    if read("writes"):  # what a tool call of its own made a service record
-        with Path(read("writes")).open("a") as records:
-            records.write(read("record") + "\\n")
-    answer = dict(role="assistant", stopReason=read("stop", "stop"), errorMessage=read("error"))
-    say(type="message_end", message=answer)
-    say(type="agent_settled")
-    if read("deaf"):  # it stops reading its input, and goes on living for a while
-        os.close(0)
-        time.sleep(float(read("deaf")))
-        sys.exit(0)
-"""
-BRIEFS = {"agent-main": "You are agent-main.", "eval-agent": "You are eval-agent."}
 NOTICE = "Notice: agent-main sent you a direct message."
 
 
 @pytest.fixture
 def config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> RunConfig:
-    programs = tmp_path / "bin"
-    programs.mkdir()
-    (programs / "pi").write_text(PI)
-    (programs / "pi").chmod(0o755)
-    monkeypatch.setenv("PATH", f"{programs}:/usr/bin:/bin")
-    monkeypatch.setenv(GATEWAY_URL_VARIABLE, "http://gateway:8080/api/v1/chat/completions")
-    monkeypatch.setenv(GATEWAY_TOKEN_FILE_VARIABLE, "/run/secrets/gateway_token")
-    monkeypatch.setenv(TOOLS_URL_VARIABLE, "http://agentgateway:3000/mcp")
-    config = load_run_config("configs/aurora-efficiency.yaml")
-    (tmp_path / "records").mkdir()
-    stack = config.settings.stack.model_copy(update={"records_directory": tmp_path / "records"})
-    pi = config.settings.pi.model_copy(update={"minimum_play_seconds": 0.0})  # the run config's is minutes
-    return dataclasses.replace(config, settings=config.settings.model_copy(update={"stack": stack, "pi": pi}))
+    return install_pi(tmp_path, monkeypatch)
 
 
 def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, SessionEnd]:
     noticed = append_to(tmp_path / "notices.jsonl")
-    return play_sessions(config, BRIEFS, tmp_path, seconds, Notices(config, BRIEFS), noticed)
-
-
-def write_home(home: Path, **files: str) -> None:
-    home.mkdir()
-    for name, text in files.items():
-        (home / name).write_text(text)
+    return play_sessions(
+        config,
+        BRIEFS,
+        tmp_path,
+        seconds,
+        Notices(config, BRIEFS),
+        noticed,
+        Subagents(config, {}, tmp_path),
+    )
 
 
 def message_from_agent_main(config: RunConfig, tmp_path: Path) -> dict[str, str]:
@@ -204,7 +158,7 @@ def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
     notices = Notices(config, BRIEFS)
     notices.unsubscribe("eval-agent", "dm")
 
-    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None)
+    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None, Subagents(config, {}, tmp_path))
 
     assert inputs_of(tmp_path / "eval-agent") == [TASK]
 

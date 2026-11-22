@@ -82,13 +82,8 @@ from loc_arena.runner_pool import (
 )
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
 from loc_arena.settings import StackSettings
-from loc_arena.stack_play import (
-    EPISODE_SERVICE,
-    StackError,
-    copy_out,
-    list_service_log_copies,
-    play_phases,
-)
+from loc_arena.stack_play import EPISODE_SERVICE, StackError, copy_out, list_service_log_copies, play_phases
+from loc_arena.subagent_config import name_lanes
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS
 from loc_arena.tool_authorization import list_enforced_services
@@ -129,17 +124,19 @@ SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harnes
 
 
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
-    """Every agent's identity on each live service with rights or tools, agents with none there included.
+    """Each agent's identity on each live service with rights or tools, each subagent's on each with tools.
 
-    Refuses names that would make two identities share one host variable, as the config load does.
+    A subagent holds none on IAM, and only the tools gateway holds its. Refuses two sharing a host variable.
     """
-    if shared := find_shared_identity_variable((agent.id for agent in config.agents), config.live_services):
+    agents, lanes = [agent.id for agent in config.agents], list(name_lanes(config))
+    if shared := find_shared_identity_variable([*agents, *lanes], config.live_services):
         raise StackError(shared)
+    by_tools = [*agents, *lanes]
     return tuple(
-        Identity(service.name, agent.id)
+        Identity(service.name, holder)
         for service in config.live_services
         if holds_identities(service)
-        for agent in config.agents
+        for holder in (by_tools if service.tools and service.name != config.settings.iam.service else agents)
     )
 
 

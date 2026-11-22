@@ -223,6 +223,12 @@ file's inode. The signing key lives in IAM's store, which only IAM mounts, so a 
 valid; whoever reads the store can sign badges. A stack run serves badges and writes the key set to the
 volume the model gateway reads (`settings.iam.key_set`).
 
+A subagent an agent starts in play is a principal of the kind `subagent`, seeded with its parent, an agent, for
+each lane a play may start (`<agent>.<n>`). IAM decides each of its checks on its parent's grants at that moment,
+and only while its parent is active, and names the subagent in the decision. It holds no grant of its own: a grant
+to it and a request from it are refused. Its credentials are on the services with tools, IAM's own excepted, and
+only the tools gateway holds them ([pi harness](../pi-harness.md#subagents)).
+
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents
 service](../agents-service.md)). Letting a caller discover the permissions a definition needs before launch

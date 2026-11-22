@@ -14,7 +14,7 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 import anyio
@@ -22,13 +22,15 @@ import httpx2
 import tenacity
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
-from loc_arena.config import RunConfig
+from loc_arena.config import AgentConfig, RunConfig
+from loc_arena.iam_seed import INBOX_TOOL
 from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
+from loc_arena.subagent_config import list_spawners
 from loc_arena.tool_authorization import TOOLS_GATEWAY_SERVICE
-from loc_arena.workspace_service import WORKSPACE_TOOLS
+from loc_arena.workspace_service import DELEGATE_TOOL, WORKSPACE_TOOLS
 
 OFFERED_TOOLS_FILE = "tools_offered.json"  # in the play's directory: each agent's offered and missing tools
 LACKED_TOOLS_FILE = "tools_lacked.jsonl"  # in the run directory: each tool a session's listing lacked
@@ -41,15 +43,15 @@ class MissingToolsError(RuntimeError):
 
 
 def name_tools(config: RunConfig) -> dict[str, set[str]]:
-    """Each agent's tools its run config names, beside the workspace service's and its subscriptions'."""
-    return {
-        agent.id: {
-            *WORKSPACE_TOOLS,
-            *NOTICE_TOOLS,
-            *(tool for tools in agent.sandbox.tools.values() for tool in tools),
-        }
-        for agent in config.agents
-    }
+    """Each agent's tools its config names, the workspace service's, and ``delegate`` for a spawner."""
+    spawners = list_spawners(config)
+    return {agent.id: set(list_agent_tools(agent, spawns=agent.id in spawners)) for agent in config.agents}
+
+
+def list_agent_tools(agent: AgentConfig, *, spawns: bool) -> tuple[str, ...]:
+    """The tools ``agent`` is offered: its services' its config names, the workspace's, and ``delegate``."""
+    named = (tool for tools in agent.sandbox.tools.values() for tool in tools)
+    return (*WORKSPACE_TOOLS, *NOTICE_TOOLS, *((DELEGATE_TOOL,) if spawns else ()), *named)
 
 
 def await_offered_tools(config: RunConfig, url: str, tokens: Mapping[str, str], directory: Path) -> None:
@@ -124,7 +126,8 @@ class _Listing(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     time: AwareDatetime | None = None
-    agent: str | None = None
+    # Whose listing: the caller, a subagent itself; a run from before the gateway logged it names the agent.
+    agent: str | None = Field(default=None, validation_alias=AliasChoices("caller", "agent"))
     session: str | None = Field(default=None, validation_alias="mcp.session.id")
     tools: list[str] | None = Field(default=None, validation_alias="tools_listed")
 
@@ -195,3 +198,22 @@ def _list_tools(url: str, token: str, seconds: float) -> tuple[set[str], str]:
         while isinstance(error, ExceptionGroup) and error.exceptions:  # the MCP client's task groups wrap it
             error = error.exceptions[0]
         return set(), f"{type(error).__name__}: {error}"
+
+
+def list_subagent_tools(
+    config: RunConfig,
+    agent: str,
+    kinds: Sequence[str],
+    *,
+    delegates: bool,
+) -> tuple[str, ...]:
+    """The tools of a subagent of ``agent`` of any of ``kinds``: theirs, or the agent's, never its inbox.
+
+    ``delegate`` is among them when ``delegates``: the subagent is above ``subagents.max_depth``.
+    """
+    named = [kind.tools if (kind := config.subagents.definitions.get(name)) else None for name in kinds]
+    allowed = None if None in named else {tool for tools in named for tool in tools or ()}
+    held = list_agent_tools(config.agent(agent), spawns=delegates)
+    return tuple(
+        tool for tool in held if tool != INBOX_TOOL and (allowed is None or tool in {*allowed, DELEGATE_TOOL})
+    )

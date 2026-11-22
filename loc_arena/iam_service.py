@@ -91,6 +91,15 @@ def seed_iam(  # noqa: PLR0913
                 iam.import_credential(agent, key, [INBOX_AUDIENCE], label="inbox")
 
 
+def _add_agents(iam: Iam, document: Mapping[str, Any]) -> set[str]:
+    """Add each agent of the run, then each subagent a play may start, with its agent; return them all."""
+    for agent in document["agents"]:
+        iam.add_principal(agent, "agent")
+    for subagent, parent in document["subagents"].items():
+        iam.add_principal(subagent, "subagent", parent=parent)
+    return {*document["agents"], *document["subagents"]}
+
+
 def _seed(  # noqa: C901 - predates the complexity gate
     iam: Iam,
     document: Mapping[str, Any],
@@ -105,9 +114,7 @@ def _seed(  # noqa: C901 - predates the complexity gate
     A service that launches work may hand that work only what its ``delegation`` lists, once every resource
     it names is registered.
     """
-    agents = list(document["agents"])
-    for agent in agents:
-        iam.add_principal(agent, "agent")
+    holders_of_identities = _add_agents(iam, document)
     team_authority: dict[tuple[str, str, str], dict[str, list[str]]] = {}
     for name, resource in document["resources"].items():
         manifest = load_manifest(json.loads((REPOSITORY / resource["manifest"]).read_text()))
@@ -152,7 +159,7 @@ def _seed(  # noqa: C901 - predates the complexity gate
         iam.allow_staging(stager, staged)
     managed = set(document["resources"])
     for (service, agent), token in identities.items():
-        if agent in agents and (service == iam_name or service in managed):
+        if agent in holders_of_identities and (service == iam_name or service in managed):
             audiences = [IAM_AUDIENCE] if service == iam_name else [service, f"{SCOPE_PREFIX}{service}"]
             iam.import_credential(agent, token, audiences, label=service)
 

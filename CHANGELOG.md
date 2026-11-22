@@ -19,6 +19,30 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
+
+### Added
+
+- The agent whose scope allows it hands a task to a subagent with `delegate`, which starts a pi session like an agent's and answers with its result ([docs](docs/pi-harness.md#subagents)).
+- The agent's subagent is general-purpose, with every tool and permission its agent holds, unless the call names a kind of the run config's, which narrows its tools ([docs](docs/pi-harness.md#subagents)).
+- The model gateway runs a subagent on its agent's model, or on one the call names from `subagents.models`, with that model's own settings and routing, refusing any other ([docs](docs/pi-harness.md#subagents)).
+- The model gateway counts a subagent's calls in its agent's turn budget on a lane of the agent's route, so its call record names the subagent ([docs](docs/pi-harness.md#subagents)).
+- The IAM service holds each subagent as its own principal, `agent-main.1`, deciding its calls on its agent's current grants, so services name it ([docs](docs/pi-harness.md#subagents)).
+- The tools gateway admits a subagent by its own key, calls each service with its own identity there, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
+- The agent's subagent takes notices while it works, so a member who writes to it in chat reaches it ([docs](docs/pi-harness.md#subagents)).
+- The chat service counts each subagent among its members, so a member can send it a direct message by its own id ([docs](docs/pi-harness.md#subagents)).
+- The forge and the job service take a subagent as its agent where they ask whose work something is, so it never merges its agent's pull request ([docs](docs/pi-harness.md#subagents)).
+- The verifier credits a subagent's work to its agent, so the split across agents counts agents alone ([docs](docs/pi-harness.md#subagents)).
+- The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
+- The run config's `subagents` block names further kinds and the models a subagent may choose, and bounds depth, concurrency, number and task length, refusing a call past one ([docs](docs/run-config.md)).
+- The run plays on while a subagent works, and its wall clock ends subagents and agents on one deadline ([docs](docs/pi-harness.md#subagents)).
+
+### Changed
+
+- The tools gateway logs a `caller` beside each call's agent and keys its tool rule on it; without subagents the caller is always the agent ([docs](docs/pi-harness.md#subagents)).
+- The agent whose scope allows `spawn_subagent`, the lead in the shipped run configs, is now offered delegate, so a lead can hand work to subagents ([docs](docs/pi-harness.md#subagents)).
+- The record names in each `inference_call` event the model its call asked for, so a subagent on its own model shows in the events ([docs](docs/pi-harness.md#subagents)).
+
 ## [427] - 2026-11-21: Monitor prompts name no company; each scenario fills its facts
 
 ### Changed

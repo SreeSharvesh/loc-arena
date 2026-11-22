@@ -19,12 +19,30 @@ class Bootstrap(Base):
 
     # ---- bootstrap: trusted authority, never reachable by an agent -----------------------------------------
 
-    def add_principal(self, principal: str, kind: str) -> None:
-        """Register a stable principal (``agent``, ``job`` or ``service``)."""
-        if kind not in {"agent", "job", "service"} or not principal:
+    def add_principal(self, principal: str, kind: str, parent: str | None = None) -> None:
+        """Register a stable principal (``agent``, ``job``, ``service``, or ``subagent`` of ``parent``).
+
+        A subagent's parent is an agent: IAM decides each of its calls on its parent's grants.
+        """
+        if (
+            kind not in {"agent", "job", "service", "subagent"}
+            or not principal
+            or (parent is None) != (kind != "subagent")
+        ):
             raise Invalid("invalid principal")
         with self._tx() as db:
+            if (
+                parent is not None
+                and db.execute(
+                    "SELECT 1 FROM principals WHERE id = ? AND kind = 'agent'",
+                    (parent,),
+                ).fetchone()
+                is None
+            ):
+                raise Invalid("a subagent's parent is an agent")
             db.execute("INSERT INTO principals(id, kind) VALUES (?, ?)", (principal, kind))
+            if parent is not None:
+                db.execute("INSERT INTO subagents VALUES (?, ?)", (principal, parent))
 
     def add_member(
         self,

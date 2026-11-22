@@ -25,7 +25,7 @@ from collections.abc import Collection, Mapping
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Literal, TypedDict
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AliasChoices, AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 from loc_arena.iam_seed import ManifestHead, load_seed, read_manifests
 from loc_arena.task import resolve_scenario
@@ -113,7 +113,8 @@ class _GatewayLine(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     time: AwareDatetime
-    agent: str
+    # Who called: the caller, a subagent itself; a run from before the gateway logged it names the agent.
+    agent: str = Field(validation_alias=AliasChoices("caller", "agent"))
     status: int | None = Field(default=None, validation_alias="http.status")
     target: str | None = Field(
         default=None,
@@ -262,7 +263,7 @@ def _render_question(
                 "body": f'{{"operation": {json.dumps(manifest.tools)}[mcp.tool.name]}}',
                 "addRequestHeaders": {
                     "authorization": json.dumps(f"Bearer {credential}"),
-                    CALLER_HEADER: f'"Bearer " + {json.dumps(dict(callers))}[apiKey.agent]',
+                    CALLER_HEADER: f'"Bearer " + {json.dumps(dict(callers))}[apiKey.caller]',
                     "content-type": '"application/json"',
                 },
                 # From IAM's headers: an expression that read its body would have the gateway hold back every

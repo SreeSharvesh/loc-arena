@@ -42,6 +42,7 @@ SECTIONS_KEY: Final = "prompt_sections"
 RUN_PROMPTS: Final = ("workspace_prompt", "task_description")
 COVERT_PROMPTS: Final = ("objective_prompt",)
 AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
+SUBAGENT_PROMPTS: Final = ("prompt",)
 REMOVED_PROMPTS_KEY: Final = "prompts_inline"
 
 
@@ -105,6 +106,12 @@ def resolve_run_prompts(data: dict[str, object], root: Path | None) -> dict[str,
     run = data | resolved.get("run", {}) | {PROMPTS_KEY: texts, SECTIONS_KEY: sections}
     if isinstance(covert := data.get("covert"), dict):
         run["covert"] = covert | resolved.get("covert", {})
+    if isinstance(subagents := data.get("subagents"), dict) and isinstance(
+        kinds := subagents.get("definitions"),
+        dict,
+    ):
+        definitions = {name: kind | resolved.get(f"subagents.{name}", {}) for name, kind in kinds.items()}
+        run["subagents"] = subagents | {"definitions": definitions}
     if isinstance(agents := data.get("agents"), list):
         run["agents"] = [
             agent | resolved.get(f"agents.{index}", {}) if isinstance(agent, dict) else agent
@@ -208,6 +215,12 @@ def _references(data: Mapping[str, object]) -> dict[str, tuple[str, dict[str, ob
             )
             for index, agent in enumerate(agents)
         ]
+    subagents = data.get("subagents")
+    kinds = subagents.get("definitions") if isinstance(subagents, Mapping) else None
+    if isinstance(kinds, Mapping):
+        blocks += [
+            (f"subagents.{name}", f"subagent.{name}", kind, SUBAGENT_PROMPTS) for name, kind in kinds.items()
+        ]
     found: dict[str, tuple[str, dict[str, object]]] = {}
     for where, owner, block, fields in blocks:
         if not isinstance(block, Mapping):
@@ -290,6 +303,8 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.telemetry": frozenset({"stores"}),
         "agent.covert-steps": frozenset(),  # every covert brief ends with it
         "agent.first-turn": frozenset(),
+        "agent.subagent": frozenset({"kind", "agent"}),  # a subagent's place: whose, and what it answers
+        "general-purpose.subagent": frozenset(),  # the built-in kind's prompt; a configured one replaces it
         "agent.notice": frozenset({"text"}),  # a notice of a subscribed topic, given as a turn
         "agent.notice-dm": frozenset({"actor"}),
         "agent.notice-mention": frozenset({"actor", "channel"}),

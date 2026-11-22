@@ -112,6 +112,54 @@ When no session could start, play ends at once. `aurora-efficiency.fast` sets th
 | `ceiling` | the loop was still working when `episode.wall_clock_seconds` passed |
 | `failed` | the loop's last run failed otherwise, past pi's own retries, or pi exited. A loop whose run failed is idle: a notice starts it again. It counts in the run's `failed_model_calls` |
 
+## Subagents
+
+<img alt="UML sequence diagram of a delegate call. The parent's pi calls delegate with a task, and optionally a kind and a model, at the tools gateway, which passes it to the workspace service as the parent. The workspace service starts the child like an agent, with its kind's tools. Until it settles, the child asks its model, its own or the parent's, on its own lane of the parent's route, counted in the parent's budget, and calls tools with its own key, named as the caller, while the parent gets progress every 5 seconds. The child answers and ends, and the parent gets the answer." src="figures/subagent-delegate.svg" width="100%">
+
+An agent whose `scope.spawn_subagent` is on hands a task to a subagent with the workspace service's tool
+`delegate(task, kind, model)`. The episode starts the subagent as it starts an agent: one pi process in RPC mode,
+with a home of its own beside the agents' (`loops/<agent id>.<n>`). The call waits for the subagent's last message,
+which is its result, and reports progress every `subagents.progress_seconds` so pi's MCP timeout does not end it.
+The subagent starts fresh, from the task text alone.
+
+| Lever | With none | Otherwise |
+| --- | --- | --- |
+| `kind` | `general-purpose`: every tool its agent holds, and the engine's prompt (`general-purpose.subagent.md`) | a kind of `subagents.definitions` ([run config](run-config.md)): its own prompt (`<kind>.subagent.md`) and a narrower set of its agent's tools |
+| `model` | its agent's model | one of `subagents.models`, which the run config keys by model id, each with the temperature, output cap and reasoning its calls take in place of its agent's role's; any other is refused |
+
+A subagent has an identity of its own and its agent's permissions. IAM holds it as a principal, `<agent id>.<n>`,
+of the kind `subagent`, and decides each of its calls on its agent's grants at that moment, so its rights are its
+agent's exactly, a right its agent gains during the call included. The decision names the subagent, so chat, the
+tickets, the forge and every other service show `agent-main.1`, which marks it as `agent-main`'s subagent. IAM
+refuses a grant to it, a request from it and a team membership for it. Where the company asks whose work
+something is, it acts for its agent: the forge's rule that an author may not merge their own pull request, and
+the job service's owners, scope and team caps, take it as its agent, and grading credits its work to its
+agent. Its tools are its agent's, never passed at call time. A kind with
+`bash` runs commands in its agent's sandbox, where its agent's identities and its agent's key to the tools
+gateway are, so what its commands call is its agent's, recorded under its agent: a kind narrows the tools a
+subagent is offered, never what its `bash` reaches, which is all its agent may do.
+
+| A subagent | How |
+| --- | --- |
+| its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play. A subagent's own subagent, past a `max_depth` of 1, is named and parented by its agent too |
+| its brief | `agent.subagent.md`, its kind's prompt, and its agent's workspace, skills and services. It gets neither its agent's assignment nor the covert objective: its task is what its caller writes in the `delegate` call, which the records hold |
+| asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), counted in its agent's turn budget, so delegating never raises it. Its calls carry its model's settings, each its agent's role's unless `subagents.models` sets it, and its model's own provider routing. On the route of an agent whose subagents may choose a model, the gateway sets those fields from the model a call names, drops one that model has no value for, and refuses a model the run does not allow and a fallback list. A spawner's own model is not listed: its calls keep their role's settings |
+| calls a tool | at the tools gateway with a key of its own, keyed by the episode's key, which no agent holds, and kept outside the run directory. The gateway admits it as its agent's subagent of the kind it was started as, `caller` in its log, allows it that kind's tools alone, and calls each service with the subagent's own identity there, which only the gateway holds. The workspace service records it as itself, on its agent's checkout and sandbox, one call at a time with its agent's |
+| its tools | its kind's, never `access_inbox`, since it asks for no right; pi gets them as `--tools` beside `--no-builtin-tools`, so it runs nothing itself. `delegate` only while it is above `subagents.max_depth` (1: never). Past a depth of 1, the gateway holds a subagent's subagent to its own kind's tools; that it holds none its caller lacks is pi's `--tools` |
+| its notices | it is a member of chat and starts with the topics of `pi.subscriptions`, holding the subscription tools, so a member who sends `agent-main.1` a direct message or mentions it reaches it. It takes a notice while it works, as an agent does, and none once it has answered; its result is its first answer that ended a run. A change of state of a job it submitted notifies its agent, whose job it is. In chat it is a member of its own: its messages and direct messages are its, so its agent does not edit them or read them, nor it its agent's |
+| its session | `loops/<agent id>.<n>/.pi/session.jsonl`, whose header names its caller's session, by its path in the episode, as `parentSession`, pi's own link from a session to its parent |
+| its record | `subagents.jsonl` in the play's directory: its start, with its caller, kind, model, task and tools, and its end, with its answer. Its `inference_call` events name the model each call asked for |
+
+A `delegate` call that would pass `max_depth`, `max_concurrent`, `max_children` or `max_task_characters`, names no
+kind of the run's, or a model it does not allow, starts nothing and answers why; a subagent whose pi cannot start is
+recorded as `failed`. A call that ends early, cut by pi or by the end of play, ends its subagent too and is recorded
+with its answer so far. Play waits while a subagent works, as it waits for an agent's session, and the wall clock
+ends both, on one deadline. After play, a subagent's model calls are its own turns, and its workspace calls are
+placed in them, on every lane the run config renders, started or not; its calls of the company's tools are recorded
+under its own identity, which the services saw, and placed in its own turns.
+A `delegate` called from inside `bash` waits for the agent's own turn, which that command holds, so its subagent's
+workspace calls wait until the command's timeout.
+
 ## Watching the sessions while a run plays
 
 A run writes its transcript and report only once both plays are graded. pi writes each session to

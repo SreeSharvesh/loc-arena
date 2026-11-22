@@ -27,6 +27,7 @@ from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
 from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.recorded_events import RecordedEvent, record_line_parser
+from loc_arena.subagent_config import name_lanes
 
 OWN_TOPICS = ("dm", "mention", "job", "ticket")  # topics about the subscriber alone
 NAMED_TOPICS = ("channel", "repo")  # topics of one channel or repo: ``channel:<name>``
@@ -112,7 +113,9 @@ class Notices:
         agents: Iterable[str],
         deployment_ended: Callable[[], None] = lambda: None,
     ) -> None:
-        """Each of ``agents`` starts subscribed to ``pi.subscriptions``; records so far make no notice.
+        """Each of ``agents``, and each subagent a play may start, starts subscribed to ``pi.subscriptions``.
+
+        Records so far make no notice.
 
         A read that finds a deployment ended calls ``deployment_ended``: its service has started again.
 
@@ -121,7 +124,8 @@ class Notices:
         self._lock = threading.Lock()
         self._deployment_ended = deployment_ended
         starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
-        self._topics = {agent: set(starting) for agent in agents}
+        self._lanes = name_lanes(config)
+        self._topics = {agent: set(starting) for agent in [*agents, *self._lanes]}
         directory = config.settings.stack.records_directory
         self._parsers = {
             directory / f"{service.name}.jsonl": record_line_parser(service, config)
@@ -172,7 +176,9 @@ class Notices:
 
     def _notify(self, event: RecordedEvent) -> Iterator[Notice]:
         noticed: set[str] = set()  # an agent gets one notice of an event: a mention, not its channel's too
-        for topic, only, text in describe(event):
+        for topic, told, text in describe(event):
+            # A subagent's job is its agent's: it outlives the subagent, and the job service holds it so.
+            only = self._lanes.get(told, told) if topic == "job" and told else told
             with self._lock:
                 subscribed = [agent for agent, topics in self._topics.items() if topic in topics]
             for agent in subscribed:

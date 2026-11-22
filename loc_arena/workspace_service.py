@@ -30,6 +30,7 @@ from starlette.routing import Mount
 
 from loc_arena.mcp_service import ALL_ADDRESSES, build_app, caller_from_token
 from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.subagent_config import DELEGATE_TOOL as DELEGATE_TOOL  # served beside them to a spawner
 from loc_arena.tool_records import Write, tool_call_recorder
 
 WORKSPACE_SERVICE = "workspace"  # its target at the tools gateway, and the name its records are kept under
@@ -41,6 +42,15 @@ _PATH = Annotated[str, Field(description="path relative to the checkout")]
 def workspace_key(sandbox_token: str) -> str:
     """The key that names the agent holding ``sandbox_token`` to the workspace service."""
     return hashlib.sha256(f"{WORKSPACE_SERVICE}:{sandbox_token}".encode()).hexdigest()
+
+
+def subagent_token(episode_key: str, child: str, kind: str | None = None) -> str:
+    """The subagent ``child``'s key, keyed by ``episode_key``, which no agent holds.
+
+    With ``kind``, its key at the tools gateway as that kind; without, its key at the workspace service.
+    """
+    held = f"subagent:{child}" + (f":{kind}" if kind else "")
+    return hmac.new(episode_key.encode(), held.encode(), hashlib.sha256).hexdigest()
 
 
 class KeyVerifier(TokenVerifier):
@@ -85,12 +95,16 @@ def build_workspace_server(
     sandbox_tokens: Mapping[str, str],
     write: Write,
     turns: Turns,
+    child_tokens: Mapping[str, str] | None = None,
 ) -> MCPServer:
     """The MCP server of ``code``'s tools for the holders of ``sandbox_tokens``; ``write`` records calls.
 
-    A call runs in its agent's turn of ``turns``.
+    A subagent ``<agent>.<n>`` of ``child_tokens`` is known by its own key and recorded as itself, and works
+    on its agent's checkout and sandbox, in its agent's turn of ``turns``, as every call does.
     """
-    agents = {workspace_key(token): agent for agent, token in sandbox_tokens.items()}
+    agents = {workspace_key(token): agent for agent, token in sandbox_tokens.items()} | {
+        workspace_key(token): child for child, token in (child_tokens or {}).items()
+    }
     server = MCPServer(
         WORKSPACE_SERVICE,
         token_verifier=KeyVerifier(agents),
@@ -100,9 +114,10 @@ def build_workspace_server(
     )
 
     def run(tool: str, **arguments: str) -> dict[str, JsonValue]:
-        agent = caller_from_token()
-        if agent is None:
+        caller = caller_from_token()
+        if caller is None:
             return {"error": "no identity: the workspace serves only authenticated callers", "tool": tool}
+        agent = caller.partition(".")[0]  # a subagent's agent
         with turns.take(agent) as playing:
             if not playing:
                 return {"error": "play has ended", "tool": tool}

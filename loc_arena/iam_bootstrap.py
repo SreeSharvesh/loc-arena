@@ -7,6 +7,7 @@ import json
 from loc_arena.config import RunConfig
 from loc_arena.deploy_pool import find_deployer
 from loc_arena.iam_seed import load_seed
+from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
 
 BOOTSTRAP_SECRET = "iam_bootstrap"  # noqa: S105 - the name of a mounted file, not a secret
@@ -44,13 +45,14 @@ def render_bootstrap(config: RunConfig) -> str:
 
     Per managed service: its manifest path, owner policy, approver (the scenario's, never an agent of the
     run) and delegation, and each agent's baseline grants: its starting rights, and nothing for the tools the
-    tools gateway offers it.
+    tools gateway offers it. Each subagent a play may start is a principal acting with its agent's rights.
     """
     seed = load_seed(resolve_scenario(config))
     if seed is None:
         raise ValueError("no iam seed")
     document = {
         "agents": [agent.id for agent in config.agents],
+        "subagents": name_lanes(config),  # each subagent a play may start, with its agent
         "operators": list(seed.operators),
         "resources": {name: resource.model_dump() for name, resource in seed.resources.items()},
         "grants": {

@@ -17,6 +17,7 @@ import subprocess
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from http import HTTPStatus
 from pathlib import Path
 
 import httpx2
@@ -25,7 +26,9 @@ import pytest
 import yaml
 from cryptography.hazmat.primitives.asymmetric import ec
 from jwt.algorithms import ECAlgorithm
+from loc_arena.gateway.loop_routes import Loops
 from loc_arena.gateway.model_gateway import (
+    EPISODE_TOKEN_VARIABLE,
     MODEL_GATEWAY_SERVICE,
     PROJECT_PREFIX,
     RUNNER_ROUTE_PREFIX,
@@ -39,7 +42,7 @@ from loc_arena.gateway.model_gateway import (
     start_gateway,
 )
 from loc_arena.settings import GatewaySettings, LocArenaSettings
-from pydantic import HttpUrl
+from pydantic import HttpUrl, JsonValue
 
 from tests.integration._docker_support import needs_stack
 
@@ -67,6 +70,17 @@ COMPANY_MODEL = "company-model"  # the company's name for RUNNER_MODEL
 CHAT = "/api/v1/chat/completions"
 RUNNERS = f"/{RUNNER_ROUTE_PREFIX}{CHAT}"
 MOCK = Path(__file__).parent / "_mock_upstream.py"
+TOGETHER: dict[str, JsonValue] = {"order": ["together"], "allow_fallbacks": False}
+GROQ: dict[str, JsonValue] = {"order": ["groq"], "allow_fallbacks": False}
+# agent-main, whose one subagent lane may call m-child beside its own m-parent, each with its own routing.
+LOOPS = Loops(
+    {"agent-main": 10},
+    {"agent-main": {"temperature": 1.0, "provider": TOGETHER}},
+    children={"agent-main": ["agent-main.1"]},
+    models={
+        "agent-main": {"m-parent": {"temperature": 1.0, "provider": TOGETHER}, "m-child": {"provider": GROQ}},
+    },
+)
 CONFIGURED = LocArenaSettings(
     gateway=GatewaySettings(
         runner_model_aliases={COMPANY_MODEL: RUNNER_MODEL},
@@ -86,6 +100,7 @@ class Stack:
     """A running gateway: where its port is published, and how to drive its compose project."""
 
     url: str
+    episode_token: str
     run: RunCompose
     compose: list[str]
     directory: Path
@@ -114,12 +129,14 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         "secrets": declare_gateway_secrets(GatewaySettings()),
     }
     (directory / "compose.yaml").write_text(yaml.safe_dump(document))
+    held = issue_held_tokens(16)
     environment = issue_gateway_secrets(
         SETTINGS,
-        issue_held_tokens(16),
+        held,
         {"sandbox-agent-main": SANDBOX_TOKEN},
         "attack",
         badges=True,
+        loops=LOOPS,
     )
     run = functools.partial(subprocess.run, env={**os.environ, **environment, "OPENROUTER_API_KEY": KEY})
     compose = [
@@ -138,7 +155,13 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
             capture_output=True,
             text=True,
         )
-        yield Stack(f"http://{published.stdout.strip()}", run, compose, directory)
+        yield Stack(
+            f"http://{published.stdout.strip()}",
+            held[EPISODE_TOKEN_VARIABLE],
+            run,
+            compose,
+            directory,
+        )
     finally:
         run([*compose, "down", "--volumes"], capture_output=True)
 
@@ -326,6 +349,38 @@ def test_a_call_the_upstream_never_answers_is_recorded_with_its_request(stack: S
     assert (reply.status_code >= 500, record.status, record.complete) == (True, reply.status_code, False)
 
 
+LOOP_FIELDS = {
+    "temperature": 0.2,
+    "provider": {"order": ["elsewhere"]},
+}  # what a loop sends, which is replaced
+
+
+@pytest.mark.parametrize(
+    ("lane", "model", "sent"),
+    [
+        ("agent-main", "m-parent", {"temperature": 1.0, "provider": TOGETHER}),
+        ("agent-main.1", "m-child", {"provider": GROQ}),
+    ],
+)
+def test_a_spawners_route_sends_each_model_its_own_request_fields(
+    stack: Stack,
+    lane: str,
+    model: str,
+    sent: dict[str, object],
+) -> None:
+    reply = call(stack, model, token=stack.episode_token, path=f"/loop/{lane}{CHAT}", **LOOP_FIELDS)
+
+    body = json.loads(reply.json()["choices"][0]["message"]["content"])["body"]
+    assert {key: body[key] for key in ("temperature", "provider") if key in body} == sent
+
+
+def test_a_spawners_route_refuses_a_model_the_run_does_not_allow(stack: Stack) -> None:
+    reply = call(stack, "m-other", token=stack.episode_token, path=f"/loop/agent-main.1{CHAT}", **LOOP_FIELDS)
+
+    assert reply.status_code == HTTPStatus.FORBIDDEN
+
+
+# The tests below restart part of the stack, so they run last.
 def test_the_record_survives_a_restart_of_the_collector(stack: Stack) -> None:
     call(stack, "a-call-before-the-restart")
     recorded(stack, "a-call-before-the-restart")

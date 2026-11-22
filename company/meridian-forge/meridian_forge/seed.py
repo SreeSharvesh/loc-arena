@@ -9,7 +9,7 @@ nothing a clone would contradict.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Literal
@@ -64,6 +64,7 @@ def open_seeded_forge(
     ci_seconds: Callable[[str, int], float],
     clock: Callable[[], float] = time.time,
     commit_date: datetime | None = None,
+    acts_for: Mapping[str, str] | None = None,
 ) -> Forge:
     """The forge over ``repos``, whose repositories in ``directory`` were seeded with ``seed``'s branches.
 
@@ -101,4 +102,5 @@ def open_seeded_forge(
         ci_seconds=ci_seconds,
         clock=clock,
         commit_date=commit_date,
+        acts_for=acts_for,
     )

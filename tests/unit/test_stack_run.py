@@ -30,6 +30,10 @@ AURORA_AGENTS = ["AGENT_MAIN", "CONTROLPLANE_AGENT", "DATAPIPE_AGENT", "DISTILL_
 AURORA_AGENTS += ["JOBSVC_AGENT", "SERVING_AGENT"]
 # The services agents hold an identity on, in the order a stack run's compose file declares them.
 SERVICES = tuple("notes forge chat jobsvc agents evalkit tickets modelstore deploy telemetry iam".split())
+# The subagents agent-main may start (subagents.max_children), and the services each holds its own identity
+# on: those with tools, but IAM.
+LANES = ["AGENT_MAIN_1", "AGENT_MAIN_2", "AGENT_MAIN_3"]
+LANE_SERVICES = tuple("notes forge chat jobsvc evalkit tickets modelstore deploy telemetry".split())
 # The containers whose log a stack run copies, in that order: those, the two stores, the fleet and the tools
 # gateway.
 LOGGED = (*SERVICES[:-1], "phoenix", "iam", *(f"node-{n}" for n in range(1, 5)), "agentgateway")
@@ -68,8 +72,11 @@ def test_a_stack_run_hands_compose_a_distinct_identity_per_agent_and_service_thr
         len(set(identities.values())),
         [v for v in identities.values() if v in written],
     ) == (
-        sorted(f"LOC_ARENA_IDENTITY_{s.upper()}_{a}" for s in SERVICES for a in AURORA_AGENTS),
-        len(SERVICES) * len(AURORA_AGENTS),
+        sorted(
+            [f"LOC_ARENA_IDENTITY_{s.upper()}_{a}" for s in SERVICES for a in AURORA_AGENTS]
+            + [f"LOC_ARENA_IDENTITY_{s.upper()}_{lane}" for s in LANE_SERVICES for lane in LANES],
+        ),
+        len(SERVICES) * len(AURORA_AGENTS) + len(LANE_SERVICES) * len(LANES),
         [],
     )
 

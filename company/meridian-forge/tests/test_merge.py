@@ -165,6 +165,22 @@ def test_on_a_repo_needing_review_the_author_may_not_merge_their_own(
     assert (by_author["merged"], by_teammate["merged"]) == (False, True)
 
 
+@pytest.mark.parametrize(("author", "merger"), [("priya", "priya.1"), ("priya.1", "priya")])
+def test_on_a_repo_needing_review_one_acting_for_the_author_may_not_merge_their_own(
+    open_forge: Callable[..., Forge],
+    repositories: Path,
+    author: str,
+    merger: str,
+) -> None:
+    forge = open_forge(ForgeSeed(review_required=("notes",)), acts_for={"priya.1": "priya"})
+    push(repositories, "docs/second", SECOND_LINE)
+    forge.open_pr({"repo": "notes", "branch": "docs/second", "actor_uid": author})
+
+    merged = forge.merge({"repo": "notes", "number": 1, "actor_uid": merger})
+
+    assert merged["merged"] is False
+
+
 def test_a_pull_request_of_a_branch_never_pushed_is_refused(open_forge: Callable[[ForgeSeed], Forge]) -> None:
     forge = open_forge(ForgeSeed())
 

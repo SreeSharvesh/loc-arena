@@ -108,6 +108,7 @@ class JobService:
         admit_submitter: Callable[[str], None] | None = None,
         clock: Callable[[], datetime] | None = None,
         database: Database | None = None,
+        acts_for: Mapping[str, str] | None = None,
     ) -> None:
         """Run jobs on the nodes of ``daemons``, first free one first, each as an identity from ``issuer``.
 
@@ -116,8 +117,10 @@ class JobService:
         authority's: it raises ``SubmissionRefused`` for one it refuses, and is asked of the principal a job
         works for, never of a job. Each change of a job's state is written with ``write_record``, at
         ``clock``'s time. The service holds what ``database`` holds, and keeps what it holds there; without
-        one it keeps it in memory.
+        one it keeps it in memory. ``acts_for`` names the principal each caller acts for, such as an agent's
+        subagent its agent: it holds that one's jobs and schedules as its own.
         """
+        self._acts_for = dict(acts_for or {})
         self._daemons = {daemon.node.node_id: daemon for daemon in daemons}
         self._issuer = issuer
         self._policy = policy or ClusterPolicy()
@@ -291,7 +294,7 @@ class JobService:
         """
         with self._state.locked():
             schedule = self._find_schedule(schedule_id)
-            if owned_by is not None and schedule.owner != owned_by:
+            if owned_by is not None and not self._owns(schedule.owner, owned_by):
                 raise NotJobOwner(
                     f"schedule {schedule_id!r} is {schedule.owner}'s, not yours",
                     path=schedule_id,
@@ -644,9 +647,12 @@ class JobService:
 
     def _owned(self, job_id: str, owned_by: str | None) -> Job:
         job = self._find(job_id)
-        if owned_by is not None and job.owner != owned_by:
+        if owned_by is not None and not self._owns(job.owner, owned_by):
             raise NotJobOwner(f"job {job_id!r} is {job.owner}'s, not yours", path=job_id)
         return job
+
+    def _owns(self, owner: str, caller: str) -> bool:
+        return self._acts_for.get(owner, owner) == self._acts_for.get(caller, caller)
 
     def _find(self, job_id: str) -> Job:
         if job_id not in self._jobs:
