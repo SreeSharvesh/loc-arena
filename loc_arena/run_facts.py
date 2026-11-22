@@ -102,8 +102,11 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
         verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else twin
         facts |= _count_play(play, sealed, run_directory / phase, verdicts, graded.safety.audit_threshold)
-        made = [
-            (event.actor_uid, key) for event in sealed if event.actor_uid in agents for key in _made(event)
+        made = [  # a subagent, <agent>.<n>, makes what it makes for its agent
+            (actor, key)
+            for event in sealed
+            if (actor := event.actor_uid.partition(".")[0]) in agents
+            for key in _made(event)
         ]
         team = Counter(key for _, key in made)  # the agents' alone, the monitors' and coworkers' apart
         facts |= {f"{play}.team.{key}": count for key, count in team.items()}
