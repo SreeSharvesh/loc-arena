@@ -20,6 +20,7 @@ from loc_arena.own_sessions import describe_loops
 from loc_arena.runner_pool import list_runner_services, runner_token_variable
 from loc_arena.sandbox import token_secret_name
 from loc_arena.stack_play import StackError
+from loc_arena.session_slots import SESSIONS_RESOURCE, list_starters, name_slots
 from loc_arena.subagent_config import name_lanes
 from loc_arena.tool_authorization import list_enforced_services
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_VARIABLE
@@ -31,18 +32,28 @@ TOKEN_BYTES = 32  # the entropy of each sandbox token and of each agent's identi
 def issue_identities(config: RunConfig) -> tuple[Identity, ...]:
     """Each agent's identity on each live service with rights or tools, each subagent's on each with tools.
 
-    A subagent holds none on IAM, and only the tools gateway holds its. Refuses two sharing a host variable.
+    A subagent holds none on IAM, and only the tools gateway holds its. Each session slot holds one on each
+    such service but IAM, which authenticates nothing until IAM issues the slot's session; and each starter
+    one on sessions, which the episode holds to start them. Refuses two sharing a host variable.
     """
-    agents, lanes = [agent.id for agent in config.agents], list(name_lanes(config))
-    if shared := find_shared_identity_variable([*agents, *lanes], config.live_services):
+    agents, lanes, slots = (
+        [agent.id for agent in config.agents],
+        list(name_lanes(config)),
+        list(name_slots(config)),
+    )
+    if shared := find_shared_identity_variable([*agents, *lanes, *slots], config.live_services):
         raise StackError(shared)
-    by_tools = [*agents, *lanes]
+    iam = config.settings.iam.service
     return tuple(
         Identity(service.name, holder)
         for service in config.live_services
         if holds_identities(service)
-        for holder in (by_tools if service.tools and service.name != config.settings.iam.service else agents)
-    )
+        for holder in [
+            *agents,
+            *(lanes if service.tools and service.name != iam else []),
+            *(slots if service.name != iam else []),
+        ]
+    ) + tuple(Identity(SESSIONS_RESOURCE, starter) for starter in list_starters(config))
 
 
 def token_variable(agent_id: str) -> str:
@@ -52,7 +63,8 @@ def token_variable(agent_id: str) -> str:
 
 def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
     """Every secret of a stack run, by the host variable compose reads: the attack env and the twin's."""
-    tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
+    holders = [*(agent.id for agent in config.agents), *name_slots(config)]  # each session slot has a sandbox
+    tokens = {holder: secrets.token_urlsafe(TOKEN_BYTES) for holder in holders}
     held = model_gateway.issue_held_tokens(TOKEN_BYTES)
     sandboxes = {sandbox_service(agent): token for agent, token in tokens.items()}
     badges = bool(managed_services(config))  # IAM runs and signs workloads' badges

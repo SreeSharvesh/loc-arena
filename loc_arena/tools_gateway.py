@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
+from loc_arena.session_slots import START_SESSION_TOOL, name_slots
 from loc_arena.subagent_config import DELEGATE_TOOL, describe_kinds, list_spawners, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
@@ -98,6 +99,7 @@ def render_tools_gateway_config(
                 *WORKSPACE_TOOLS,
                 *NOTICE_TOOLS,
                 *([DELEGATE_TOOL] if agent.id in spawners else []),
+                *([START_SESSION_TOOL] if agent.scope.start_session else []),
             ],
         }
         for agent in config.agents
@@ -112,7 +114,12 @@ def render_tools_gateway_config(
             config,
             list_subagent_tools(config, agent, kinds, delegates=delegates),
         )
+    # A session slot holds its own sandbox token, and the tools of any kind of its starter's, but its inbox.
+    slots = name_slots(config)
+    for slot, starter in slots.items():
+        tools[slot] = _group_by_service(config, list_subagent_tools(config, starter, kinds, delegates=False))
     callers = dict(tokens) | {child: subagent_token(str(notifier_key), child) for child in lanes}
+    agents = {**lanes, **slots}  # whose inbox and notifier key a subagent's or a session's key is given
     targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key, callers)
     policies = {
         "apiKey": {
@@ -121,7 +128,7 @@ def render_tools_gateway_config(
             "keys": [
                 {
                     "keyHash": f"sha256:{hashlib.sha256(token.encode()).hexdigest()}",
-                    "metadata": {"agent": lanes.get(caller, caller), "caller": caller},
+                    "metadata": {"agent": agents.get(caller, caller), "caller": caller},
                 }
                 for caller, token in callers.items()
             ],

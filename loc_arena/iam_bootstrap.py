@@ -30,11 +30,15 @@ def inbox_key_variable(agent: str) -> str:
 
 
 def managed_services(config: RunConfig) -> tuple[str, ...]:
-    """The live services of ``config`` that central IAM manages (none unless it is enabled)."""
+    """The services of ``config`` that central IAM manages (none unless it is enabled).
+
+    Its live services, and sessions, which the episode serves, when an agent may start them.
+    """
     if not config.settings.iam.enabled:
         return ()
     seed = load_seed(resolve_scenario(config))
-    return () if seed is None else tuple(name for name in seed.resources if name in _live_names(config))
+    served = _live_names(config) | ({SESSIONS_RESOURCE} if list_starters(config) else set())
+    return () if seed is None else tuple(name for name in seed.resources if name in served)
 
 
 def _live_names(config: RunConfig) -> set[str]:

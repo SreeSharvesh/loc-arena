@@ -77,6 +77,7 @@ from loc_arena.runner_pool import (
     runner_token_secret,
 )
 from loc_arena.sandbox import IDENTITY_PREFIX, TOKEN_FILE, build_server_settings, token_secret_name
+from loc_arena.session_slots import SESSIONS_RESOURCE, name_slots
 from loc_arena.settings import StackSettings
 from loc_arena.stack_play import EPISODE_SERVICE, StackError, copy_out, list_service_log_copies, play_phases
 from loc_arena.task import SANDBOX_URL_VARIABLE, TOOLS_URL_VARIABLE, resolve_scenario
@@ -139,7 +140,8 @@ def render_compose(
     records = f"records:{stack.records_directory}"  # the services' record lines, read during play
     engine = _build_from(repository, ENGINE_TARGET, stack.image)
     agent_ids = [agent.id for agent in config.agents]
-    checkouts = [checkout_mount(stack, agent) for agent in agent_ids]
+    holders = [*agent_ids, *name_slots(config)]  # each with a sandbox: the agents, and each session slot
+    checkouts = [checkout_mount(stack, holder) for holder in holders]
     services = config.live_services
     tool_services = [service.name for service in services if service.tools]
     # A service with rights too (IAM) is reached from the sandboxes as well, so they keep its identity.
@@ -163,11 +165,15 @@ def render_compose(
                     config,
                     repository,
                     agent,
-                    [identity for identity in identities if identity.service not in tools_only],
+                    [
+                        identity
+                        for identity in identities
+                        if identity.service not in {*tools_only, SESSIONS_RESOURCE}
+                    ],
                     skills,
                     builds=index == 0,
                 )
-                for index, agent in enumerate(agent_ids)
+                for index, agent in enumerate(holders)
             },
             **{
                 service.name: _render_live_service(
@@ -215,12 +221,12 @@ def render_compose(
         },
         "volumes": {
             **dict.fromkeys(("sealed", "output", "records"), {}),
-            **render_checkout_volumes(stack, agent_ids),
+            **render_checkout_volumes(stack, holders),
             **({model_gateway.BADGES_VOLUME: {}} if managed else {}),
         },
         "secrets": {
             **model_gateway.declare_gateway_secrets(config.settings.gateway),
-            **{token_secret_name(agent): {"environment": token_variable(agent)} for agent in agent_ids},
+            **{token_secret_name(holder): {"environment": token_variable(holder)} for holder in holders},
             **{identity.secret_name: {"environment": identity.variable} for identity in identities},
             **declare_runner_token_secrets(config),
             **declare_node_token_secrets(config),
@@ -263,9 +269,18 @@ def _render_episode(
     episode_arguments: list[str],
     volumes: list[str],
 ) -> ComposeService:
-    """The episode: plays ``run`` once every other service is up, with every sandbox token and no identity."""
+    """The episode: plays ``run`` once every other service is up, with every sandbox token.
+
+    It serves sessions: it holds each starter's identity on sessions, each slot's, and sessions' own
+    credential at IAM, which it hands a session's workload when it starts one.
+    """
     stack = config.settings.stack
-    agent_ids = [agent.id for agent in config.agents]
+    holders, slots = [*(agent.id for agent in config.agents), *name_slots(config)], list(name_slots(config))
+    serves = [
+        i.secret_name
+        for i in issue_identities(config)
+        if i.agent_id in slots or i.service == SESSIONS_RESOURCE
+    ]
     tools_url = (
         f"http://{TOOLS_GATEWAY_SERVICE}:{stack.tools_gateway_port}{MCP_PATH}"
         if serves_tools(config)
@@ -287,8 +302,10 @@ def _render_episode(
         },
         "secrets": [
             model_gateway.GATEWAY_TOKEN_SECRET_NAME,
-            *(token_secret_name(agent_id) for agent_id in agent_ids),
+            *(token_secret_name(holder) for holder in holders),
             *([NOTIFIER_KEY_SECRET_NAME] if tools_url else []),
+            *serves,
+            *([f"{SERVICE_CREDENTIAL_PREFIX}{SESSIONS_RESOURCE}"] if slots else []),
         ],
         "volumes": volumes,
         "networks": [AGENT_NETWORK],
@@ -296,7 +313,7 @@ def _render_episode(
             **{
                 service: {"condition": "service_healthy"}
                 for service in [
-                    *map(sandbox_service, agent_ids),
+                    *map(sandbox_service, holders),
                     *(service.name for service in config.live_services),
                 ]
             },
