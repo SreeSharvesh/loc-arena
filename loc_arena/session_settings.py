@@ -16,8 +16,8 @@ class SessionSettings(SettingsGroup):
 
     budget: Literal["share", "own"] = Field(
         default="share",
-        description="share: each session slot's turns come out of its starter's turn budget when play starts; "
-        "own: a session's turns are its own, beside its starter's.",
+        description="share: each session slot's turns come out of its starter's turn budget when play "
+        "starts; own: a session's turns are its own, beside its starter's.",
     )
     share_turns: PositiveInt = Field(
         default=20,
@@ -41,8 +41,8 @@ class SessionSettings(SettingsGroup):
     )
     max_per_play: NonNegativeInt = Field(
         default=0,
-        description="The sessions all agents may start in a play; 0, none: no agent is offered start_session, "
-        "so a run config turns sessions on.",
+        description="The sessions all agents may start in a play; 0, none: no agent is offered "
+        "start_session, so a run config turns sessions on.",
     )
     max_depth: PositiveInt = Field(
         default=1,

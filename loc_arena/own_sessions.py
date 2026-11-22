@@ -46,6 +46,7 @@ from loc_arena.notices import Notices, add_notice_tools, turn_of
 from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.sandbox import token_secret_name
 from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.session_slots import name_slots
 from loc_arena.stack_play import EPISODE_SERVICE
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import TOOLS_URL_VARIABLE
@@ -59,7 +60,8 @@ from loc_arena.workspace_service import (
     serve_workspace,
 )
 
-if TYPE_CHECKING:  # loc_arena.subagents imports this module
+if TYPE_CHECKING:  # loc_arena.subagents and loc_arena.sessions import this module
+    from loc_arena.sessions import Sessions
     from loc_arena.subagents import Subagents
 
 _LOGGER = logging.getLogger(__name__)
@@ -293,14 +295,24 @@ def describe_loops(config: RunConfig) -> Loops:
     children: dict[str, list[str]] = {}
     for child, agent in name_lanes(config).items():
         children.setdefault(agent, []).append(child)
-    # A spawner's subagents may call the run's other models too, each with its own settings and routing.
+    # A spawner's subagents, and a starter's sessions, may call the run's other models too, each with its own
+    # settings and routing.
     chosen = config.subagents.models
-    models = {
-        agent: {config.loop_model(agent).model: overrides[agent]}
-        | {model: describe_overrides(choose_settings(config, agent, model), model) for model in chosen}
-        for agent in children
-        if chosen
-    }
+
+    def admit_models(agent: str) -> dict[str, Mapping[str, JsonValue]]:
+        return {config.loop_model(agent).model: overrides[agent]} | {
+            model: describe_overrides(choose_settings(config, agent, model), model) for model in chosen
+        }
+
+    models = {agent: admit_models(agent) for agent in children if chosen}
+    # A session slot's loop is a route of its own: its turns, its share taken from its starter's when play
+    # starts, or its own; its starter's request settings.
+    bounds = config.settings.sessions
+    for slot, starter in name_slots(config).items():
+        calls[slot] = bounds.share_turns if bounds.budget == "share" else bounds.own_turns
+        calls[starter] -= bounds.share_turns if bounds.budget == "share" else 0
+        overrides[slot] = overrides[starter]
+        models |= {slot: admit_models(starter)} if chosen else {}
     return Loops(calls, overrides, children=children, models=models)
 
 
@@ -406,17 +418,18 @@ def play_sessions(
     notices: Notices,
     record: Write,
     subagents: Subagents,
+    sessions: Sessions,
 ) -> dict[str, SessionEnd]:
     """Run every agent's session at once, each from its own home under ``homes``; how each ended, by agent.
 
     ``briefs`` holds each agent's system prompt. Each of ``notices`` goes to its agent's session as a prompt,
     and to ``record`` with whether the session took it. Play ends when no session nor any of ``subagents``
-    has work left and the services' records hold nothing new, once the config's minimum has passed, or after
-    ``seconds``. With no session to run, the minimum does not hold it.
+    or ``sessions`` has work left and the services' records hold nothing new, once the config's minimum
+    has passed, or after ``seconds``. With no session to run, the minimum does not hold it.
     """
     start = monotonic()
     ceiling, floor = start + seconds, start + config.settings.pi.minimum_play_seconds
-    sessions: dict[str, PiSession] = {}
+    loops: dict[str, PiSession] = {}
     ended: dict[str, SessionEnd] = {}
     environment = {"PATH": os.environ["PATH"], **PI_ENVIRONMENT}
     try:
@@ -425,36 +438,35 @@ def play_sessions(
                 home = homes / agent
                 pi = write_pi_home(home, config, agent, brief)
                 working = loop_working_directory(agent)
-                sessions[agent] = PiSession(pi, home, working, {"HOME": str(home), **environment})
-                sessions[agent].prompt(TASK)
+                loops[agent] = PiSession(pi, home, working, {"HOME": str(home), **environment})
+                loops[agent].prompt(TASK)
             except (OSError, KeyError, ValueError) as error:  # its home or pi could not be set up
                 ended[agent] = SessionEnd("failed", None, str(error))
         while monotonic() < ceiling:
-            # Idle sessions write no record, so what is read after this check is all there will be.
-            idle = not any(session.is_working() for session in (*sessions.values(), subagents))
+            # Idle loops write no record, so what is read after this check is all there will be.
+            idle = not any(session.is_working() for session in (*loops.values(), subagents, sessions))
             new = notices.read()
-            for notice in new:  # a subagent takes its notices while it works
-                text = turn_of(notice.text)
+            for notice in new:  # a subagent takes its notices while it works, a session as an agent does
+                text, to = turn_of(notice.text), notice.agent
                 sent = (
-                    sessions[notice.agent].prompt(text)
-                    if notice.agent in sessions
-                    else subagents.prompt(
-                        notice.agent,
-                        text,
-                    )
+                    loops[to].prompt(text)
+                    if to in loops
+                    else subagents.prompt(to, text) or sessions.prompt(to, text)
                 )
                 record(json.dumps({"time": datetime.now(UTC).isoformat(), **asdict(notice), "sent": sent}))
-            if idle and not new and (monotonic() >= floor or not sessions):
+            if idle and not new and (monotonic() >= floor or not loops):
                 break
             sleep(config.settings.pi.notice_poll_seconds)
     finally:
         subagents.end()
-        stopped = {agent: session.stop() for agent, session in sessions.items()}
+        sessions.end()
+        stopped = {agent: session.stop() for agent, session in loops.items()}
         deadline = monotonic() + STOP_SECONDS
         for agent, end in stopped.items():
-            exit_code = sessions[agent].wait(deadline - monotonic())
+            exit_code = loops[agent].wait(deadline - monotonic())
             ended[agent] = SessionEnd(end.reason, None if end.reason == "ceiling" else exit_code, end.stderr)
         subagents.wait(deadline - monotonic())
+        sessions.wait(deadline - monotonic())
     return {agent: ended[agent] for agent in briefs}
 
 
@@ -476,6 +488,7 @@ def serve_play_tools(
     records: Write,
     turns: Turns,
     subagents: Subagents,
+    sessions: Sessions,
 ) -> Iterator[Notices]:
     """Serve the episode's targets of the tools gateway for the holders of ``tokens``; yield their notices.
 
@@ -485,8 +498,10 @@ def serve_play_tools(
     again, the notifier tells every session to list its tools again.
     """
     secrets_dir, stack = config.settings.gateway.secrets_dir, config.settings.stack
-    workspace = build_workspace_server(code, tokens, records, turns, subagents.list_tokens())
+    keys = subagents.list_tokens() | sessions.list_tokens()  # each subagent's and session's at the workspace
+    workspace = build_workspace_server(code, tokens, records, turns, keys)
     subagents.serve(workspace)
+    sessions.serve(workspace)
     notifier = ToolListNotifier((secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip(), EPISODE_SERVICE)
     notify = functools.partial(notifier.notify, stack.tools_offer_seconds)
     arguments = (config, os.environ[TOOLS_URL_VARIABLE], tokens, notify)
@@ -512,6 +527,7 @@ def play_own_sessions(
     directory: Path,
     seconds: float,
     subagents: Subagents,
+    sessions: Sessions,
 ) -> dict[str, SessionEnd]:
     """Play every agent's session to its end, with the workspace service up; how each ended, by agent.
 
@@ -520,15 +536,16 @@ def play_own_sessions(
     ended. Sessions start once the tools gateway offers each agent every tool its run config names
     (``loc_arena.tool_offer``). ``briefs`` holds each agent's brief;
     the attack's target agent gets the covert objective before its own (``brief_loop``). An agent
-    starts its ``subagents`` with ``delegate``, served beside its workspace tools.
+    starts its ``subagents`` with ``delegate`` and its ``sessions`` with ``start_session``, served beside its
+    workspace tools.
     """
     secrets_dir = config.settings.gateway.secrets_dir
     tokens = {agent: (secrets_dir / token_secret_name(agent)).read_text().strip() for agent in briefs}
     records = append_to(directory / RECORDS_DIRECTORY / f"{WORKSPACE_SERVICE}.jsonl")
-    turns = Turns(briefs)
+    turns = Turns([*briefs, *name_slots(config)])  # a session works in its own turn, as an agent
     briefs = {agent: brief_loop(config, agent, brief) for agent, brief in briefs.items()}
     noticed = append_to(directory / NOTICES_FILE)
-    with serve_play_tools(config, code, tokens, records, turns, subagents) as notices:
+    with serve_play_tools(config, code, tokens, records, turns, subagents, sessions) as notices:
         await_offered_tools(
             config,
             os.environ[TOOLS_URL_VARIABLE],
@@ -543,6 +560,7 @@ def play_own_sessions(
             notices,
             noticed,
             subagents,
+            sessions,
         )
         turns.end()  # a command still running ends before the checkouts are captured
     record_session_ends(directory, ended)

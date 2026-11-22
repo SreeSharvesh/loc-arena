@@ -28,6 +28,7 @@ SERVE_WORKSPACE = """
 import threading, time
 from loc_arena.live import build_subagent_briefs
 from loc_arena.own_sessions import serve_play_tools
+from loc_arena.sessions import Sessions
 from loc_arena.subagents import Subagents
 from loc_arena.sandbox import token_secret_name
 from loc_arena.workspace_service import Turns
@@ -35,7 +36,8 @@ def serve_agents_workspace(config, code, write):
     secrets = config.settings.gateway.secrets_dir
     tokens = {a.id: (secrets / token_secret_name(a.id)).read_text().strip() for a in config.agents}
     subagents = Subagents(config, build_subagent_briefs(config), secrets)  # as play serves delegate
-    serving = serve_play_tools(config, code, tokens, write, Turns(tokens), subagents)
+    sessions = Sessions(config, {}, secrets, code, {}, 30)  # no agent starts one in these tests
+    serving = serve_play_tools(config, code, tokens, write, Turns(tokens), subagents, sessions)
     notices = serving.__enter__()
     def read_notices():
         while True:

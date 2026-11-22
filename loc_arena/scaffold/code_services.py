@@ -54,6 +54,10 @@ class CodeServices:
         self._stack = stack
         self._skills = skills._replace(source=skills.source.resolve()) if skills else None
 
+    def add(self, holder: str, checkout: Checkout) -> None:
+        """Act on ``checkout`` for ``holder`` too, as a session started in play has one."""
+        self._checkouts[holder] = checkout
+
     def _checkout(self, args: dict[str, Any]) -> Checkout:
         agent = str(args["actor_uid"])
         if agent not in self._checkouts:

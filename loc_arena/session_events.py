@@ -37,6 +37,7 @@ from loc_arena.gateway.model_gateway import (
 )
 from loc_arena.logging_.agent_trace import EpisodeTrace, TurnRecord, TurnRef
 from loc_arena.logging_.events import fingerprint
+from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 
 AGENT_MODEL_ROLE = "untrusted_agent"  # the role every agent's loop calls
@@ -75,8 +76,8 @@ class SessionCall:
 
 
 def read_play_calls(run_directory: Path, phase: str, config: RunConfig) -> list[SessionCall]:
-    """The session calls of the play in the directory ``phase``: its agents' and its subagents'."""
-    lanes = [agent.id for agent in config.agents] + list(name_lanes(config))
+    """The session calls of the play in the directory ``phase``: its agents', subagents' and sessions'."""
+    lanes = [agent.id for agent in config.agents] + list(name_lanes(config)) + list(name_slots(config))
     return read_session_calls(run_directory, PHASE_PLAYS[phase], lanes)
 
 

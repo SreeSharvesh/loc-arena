@@ -114,7 +114,8 @@ def find_seed_problem(  # noqa: C901 - predates the complexity gate
 ) -> str | None:
     """What is wrong with a seed against the scenario's services and the run's ``agents``, else ``None``."""
     live = {service.name: service for service in live_services}
-    if unknown := sorted(set(seed.resources) - set(live) - {SESSIONS_RESOURCE}):  # the episode serves sessions
+    # The episode serves sessions: the one resource no live service runs.
+    if unknown := sorted(set(seed.resources) - set(live) - {SESSIONS_RESOURCE}):
         return f"the iam seed names services the scenario does not run: {unknown}"
     roles: dict[str, tuple[str, str]] = {}
     heads: dict[str, ManifestHead] = {}

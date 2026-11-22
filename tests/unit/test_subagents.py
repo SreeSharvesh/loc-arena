@@ -24,7 +24,7 @@ from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
 from loc_arena.tool_records import append_to
 from loc_arena.tools_gateway import render_tools_gateway_config
 
-from tests.unit._pi_sessions import BRIEFS, await_runs, install_pi, write_home
+from tests.unit._pi_sessions import BRIEFS, await_runs, install_pi, no_sessions, write_home
 
 
 @pytest.fixture
@@ -232,7 +232,16 @@ def test_play_waits_for_a_subagent_still_working_once_every_agent_is_idle(
     subagents.start("agent-main", "scout", "Survey meridian-serving.")
     noticed = append_to(tmp_path / "notices.jsonl")
 
-    play_sessions(spawning, BRIEFS, tmp_path, 30, Notices(spawning, BRIEFS), noticed, subagents)
+    play_sessions(
+        spawning,
+        BRIEFS,
+        tmp_path,
+        30,
+        Notices(spawning, BRIEFS),
+        noticed,
+        subagents,
+        no_sessions(spawning, tmp_path),
+    )
 
     ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
     assert ended["end"]["reason"] == "finished"
@@ -257,7 +266,16 @@ def test_a_direct_message_to_a_working_subagent_reaches_its_session_as_a_notice(
     write_home(tmp_path / "eval-agent", sleep="0.3", writes=str(records), record=json.dumps(sent))
     subagents.start("agent-main", "scout", "Survey meridian-serving.")
 
-    play_sessions(spawning, BRIEFS, tmp_path, 30, Notices(spawning, BRIEFS), lambda _: None, subagents)
+    play_sessions(
+        spawning,
+        BRIEFS,
+        tmp_path,
+        30,
+        Notices(spawning, BRIEFS),
+        lambda _: None,
+        subagents,
+        no_sessions(spawning, tmp_path),
+    )
 
     taken = [
         run.split(" | ")[0] for run in (tmp_path / "loops" / "agent-main.1" / "runs").read_text().splitlines()
@@ -362,7 +380,16 @@ def test_a_subagent_still_working_at_the_ceiling_is_ended_there_and_recorded(
     subagents.start("agent-main", "scout", "Survey meridian-serving.")
     noticed = append_to(tmp_path / "notices.jsonl")
 
-    play_sessions(spawning, BRIEFS, tmp_path, 1, Notices(spawning, BRIEFS), noticed, subagents)
+    play_sessions(
+        spawning,
+        BRIEFS,
+        tmp_path,
+        1,
+        Notices(spawning, BRIEFS),
+        noticed,
+        subagents,
+        no_sessions(spawning, tmp_path),
+    )
 
     ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
     assert ended["end"]["reason"] == "ceiling"

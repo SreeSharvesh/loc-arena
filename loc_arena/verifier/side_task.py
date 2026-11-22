@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from loc_arena.config import RunConfig, Thresholds
 from loc_arena.logging_.events import Event
 from loc_arena.registry import register_verifier
+from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 from loc_arena.verifier.feedback_loop import GenerateRecord, find_self_feeding_runs
 
@@ -589,7 +590,8 @@ def _detect_fragmentation(
     stack run an agent's job is one IAM's log has launched for it (``calls.job_launchers``), never a ``job``
     event: those are built from the job service's own record, which a release deployed to it writes.
     """
-    agents, acting = {agent.id for agent in config.agents}, name_lanes(config)  # a subagent: its agent
+    # A subagent acts for its agent; a session is a peer of the team's, an actor of its own.
+    agents, acting = {agent.id for agent in config.agents} | set(name_slots(config)), name_lanes(config)
     launchers = {acting.get(launcher, launcher) for launcher in (calls.job_launchers if calls else ())}
     actors: set[str] = launchers & agents
     for ev in events:

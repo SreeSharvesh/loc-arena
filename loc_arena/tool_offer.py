@@ -49,7 +49,7 @@ def name_tools(config: RunConfig) -> dict[str, set[str]]:
     starters = list_starters(config)
     return {
         agent.id: set(
-            list_agent_tools(agent, spawns=agent.id in spawners, starts_sessions=agent.id in starters)
+            list_agent_tools(agent, spawns=agent.id in spawners, starts_sessions=agent.id in starters),
         )
         for agent in config.agents
     }

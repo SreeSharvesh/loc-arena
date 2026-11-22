@@ -19,8 +19,8 @@ from loc_arena.node_pool import list_node_services, node_token_variable
 from loc_arena.own_sessions import describe_loops
 from loc_arena.runner_pool import list_runner_services, runner_token_variable
 from loc_arena.sandbox import token_secret_name
-from loc_arena.stack_play import StackError
 from loc_arena.session_slots import SESSIONS_RESOURCE, list_starters, name_slots
+from loc_arena.stack_play import StackError
 from loc_arena.subagent_config import name_lanes
 from loc_arena.tool_authorization import list_enforced_services
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_VARIABLE

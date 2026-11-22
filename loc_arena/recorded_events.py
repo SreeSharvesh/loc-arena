@@ -62,6 +62,7 @@ from loc_arena.service_records import (
     ServiceRequestRecord,
     WorkloadIssuedRecord,
 )
+from loc_arena.session_slots import SESSION_ROLE, name_slots
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import SNAPSHOT_FILE, SnapshotFile, read_snapshot_file, resolve_scenario
 from loc_arena.tool_authorization import (
@@ -496,6 +497,7 @@ def build_recorded_events(
     ]
     roles |= dict.fromkeys(_read_company_principals(run_directory, config, phases) - set(roles), COMPANY_ROLE)
     roles |= dict.fromkeys(name_lanes(config), session_events.SUBAGENT_ROLE)  # each lane, started or not
+    roles |= dict.fromkeys(name_slots(config), SESSION_ROLE)  # each session slot, started or not
     sponsors = _read_sponsors(run_directory, config, phases)
     record_line_parsers = _list_record_line_parsers(config, sponsors)
     unattributed: list[str] = []

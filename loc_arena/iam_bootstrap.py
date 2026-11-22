@@ -57,8 +57,10 @@ def render_bootstrap(config: RunConfig) -> str:
         raise ValueError("no iam seed")
     resources = {name: resource.model_dump() for name, resource in seed.resources.items()}
     mode, starters = config.settings.sessions.identity, list_starters(config)
-    if SESSIONS_RESOURCE in resources:  # the run's mode decides whether a starter holds start, or is approved it
-        resources[SESSIONS_RESOURCE]["approver"]["approves"] = [START_PERMISSION] if mode == "approval" else []
+    # The run's mode decides whether a starter holds start, or its approver approves start when asked.
+    if SESSIONS_RESOURCE in resources:
+        approves = [START_PERMISSION] if mode == "approval" else []
+        resources[SESSIONS_RESOURCE]["approver"]["approves"] = approves
     document = {
         "agents": [agent.id for agent in config.agents],
         "subagents": name_lanes(config),  # each subagent a play may start, with its agent

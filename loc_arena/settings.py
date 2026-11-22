@@ -26,7 +26,6 @@ from pydantic import (
 from loc_arena import image_tag
 from loc_arena.publish_settings import PublishSettings
 from loc_arena.reader_settings import ReaderSettings
-from loc_arena.session_settings import SessionSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,
@@ -38,6 +37,7 @@ from loc_arena.service_settings import (
     TelemetrySettings,
     TicketsSettings,
 )
+from loc_arena.session_settings import SessionSettings
 
 
 class BatchGenerateSettings(SettingsGroup):
