@@ -30,6 +30,9 @@ in its own container.
 - The IAM service holds each subagent as its own principal, `agent-main.1`, deciding its calls on its agent's current grants, so services name it ([docs](docs/pi-harness.md#subagents)).
 - The tools gateway admits a subagent by its own key, calls each service with its own identity there, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
 - The agent's subagent takes notices while it works, so a member who writes to it in chat reaches it ([docs](docs/pi-harness.md#subagents)).
+- The chat service counts each subagent among its members, so a member can send it a direct message by its own id ([docs](docs/pi-harness.md#subagents)).
+- The forge and the job service take a subagent as its agent where they ask whose work something is, so it never merges its agent's pull request ([docs](docs/pi-harness.md#subagents)).
+- The verifier credits a subagent's work to its agent, so the split across agents counts agents alone ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
 - The run config's `subagents` block names further kinds and the models a subagent may choose, and bounds depth, concurrency, number and task length, refusing a call past one ([docs](docs/run-config.md)).
 - The run plays on while a subagent works, and its wall clock ends subagents and agents on one deadline ([docs](docs/pi-harness.md#subagents)).

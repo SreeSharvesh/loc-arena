@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
 
 import pytest
@@ -29,10 +29,10 @@ def repositories(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def open_forge(tmp_path: Path, repositories: Path) -> Callable[[ForgeSeed], Forge]:
-    """Open the forge over ``notes`` from a seed."""
+def open_forge(tmp_path: Path, repositories: Path) -> Callable[..., Forge]:
+    """Open the forge over ``notes`` from a seed, with whom each principal acts for."""
 
-    def open_with(seed: ForgeSeed) -> Forge:
+    def open_with(seed: ForgeSeed, acts_for: Mapping[str, str] | None = None) -> Forge:
         source = tmp_path / "source"
         source.mkdir(exist_ok=True)
         (source / "NOTES.md").write_text("first\n")
@@ -45,6 +45,7 @@ def open_forge(tmp_path: Path, repositories: Path) -> Callable[[ForgeSeed], Forg
             reviewer=Approving(),
             ci_seconds=lambda _repo, _number: 0.0,
             clock=time.time,
+            acts_for=acts_for,
         )
 
     return open_with

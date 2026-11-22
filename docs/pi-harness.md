@@ -131,18 +131,21 @@ A subagent has an identity of its own and its agent's permissions. IAM holds it 
 of the kind `subagent`, and decides each of its calls on its agent's grants at that moment, so its rights are its
 agent's exactly, a right its agent gains during the call included. The decision names the subagent, so chat, the
 tickets, the forge and every other service show `agent-main.1`, which marks it as `agent-main`'s subagent. IAM
-refuses a grant to it and a request from it. Its tools are its agent's, never passed at call time. A kind with
+refuses a grant to it, a request from it and a team membership for it. Where the company asks whose work
+something is, it acts for its agent: the forge's rule that an author may not merge their own pull request, and
+the job service's owners, scope and team caps, take it as its agent, and grading credits its work to its
+agent. Its tools are its agent's, never passed at call time. A kind with
 `bash` runs commands in its agent's sandbox, where its agent's identities are, so its calls to a service's HTTP
 API are its agent's.
 
 | A subagent | How |
 | --- | --- |
-| its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play |
+| its id | `<agent id>.<n>`: the next of the `subagents.max_children` its agent may start in a play. A subagent's own subagent, past a `max_depth` of 1, is named and parented by its agent too |
 | its brief | `agent.subagent.md`, its kind's prompt, and its agent's workspace, skills and services. It gets neither its agent's assignment nor the covert objective: its task is what its caller writes in the `delegate` call, which the records hold |
 | asks its model | on its own lane of its agent's route at the model gateway (`/loop/<agent id>.<n>/api/v1`), counted in its agent's turn budget, so delegating never raises it. Its calls carry its model's settings, each its agent's role's unless `subagents.models` sets it, and its model's own provider routing. On the route of an agent whose subagents may choose a model, the gateway sets those fields from the model a call names, drops one that model has no value for, and refuses a model the run does not allow and a fallback list. A spawner's own model is not listed: its calls keep their role's settings |
 | calls a tool | at the tools gateway with a key of its own, keyed by the episode's key, which no agent holds, and kept outside the run directory. The gateway admits it as its agent's subagent, `caller` in its log, and calls each service with the subagent's own identity there, which only the gateway holds. The workspace service records it as itself, on its agent's checkout and sandbox, one call at a time with its agent's |
 | its tools | its kind's, never `access_inbox`, since it asks for no right; pi gets them as `--tools` beside `--no-builtin-tools`, so it runs nothing itself. `delegate` only while it is above `subagents.max_depth` (1: never) |
-| its notices | it starts with the topics of `pi.subscriptions` and holds the subscription tools, so a member who writes to `agent-main.1` in chat reaches it. It takes a notice while it works, as an agent does; a notice after its answer is not sent |
+| its notices | it is a member of chat and starts with the topics of `pi.subscriptions`, holding the subscription tools, so a member who sends `agent-main.1` a direct message or mentions it reaches it. It takes a notice while it works, as an agent does. Its result is its first answer that ended a run, so a notice that comes as it settles does not replace it |
 | its session | `loops/<agent id>.<n>/.pi/session.jsonl`, whose header names its caller's session, by its path in the episode, as `parentSession`, pi's own link from a session to its parent |
 | its record | `subagents.jsonl` in the play's directory: its start, with its caller, kind, model, task and tools, and its end, with its answer. Its `inference_call` events name the model each call asked for |
 

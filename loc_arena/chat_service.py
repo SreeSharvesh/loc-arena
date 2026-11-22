@@ -21,6 +21,7 @@ from starlette.applications import Starlette
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
 from loc_arena.mcp_service import caller_from_token, serve
+from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
 from meridian_controlplane.chat import (
@@ -41,7 +42,9 @@ def open_chat_store(config: RunConfig) -> ChatStore:
     seed = load_chat_seed(scenario.directory / scenario.meta[SEED_KEY])
     if (overlay := config.settings.chat.seed_overlay) is not None:
         seed = _lay_over(seed, load_chat_seed(scenario.directory / overlay))
-    return open_seeded_store(config.settings.chat.database, seed, [agent.id for agent in config.agents])
+    # A subagent is a member too, by its own id.
+    members = [*(agent.id for agent in config.agents), *name_lanes(config)]
+    return open_seeded_store(config.settings.chat.database, seed, members)
 
 
 def _lay_over(seed: ChatSeed, overlay: ChatSeed) -> ChatSeed:

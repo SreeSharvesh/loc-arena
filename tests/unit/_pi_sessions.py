@@ -41,7 +41,9 @@ for line in sys.stdin:
     if read("writes"):  # what a tool call of its own made a service record
         with Path(read("writes")).open("a") as records:
             records.write(read("record") + "\\n")
-    answer = dict(role="assistant", stopReason=read("stop", "stop"), errorMessage=read("error"))
+    reply = [dict(type="text", text="Answered: " + prompt["message"])]
+    stop, error = read("stop", "stop"), read("error")
+    answer = dict(role="assistant", stopReason=stop, errorMessage=error, content=reply)
     say(type="message_end", message=answer)
     say(type="agent_settled")
     if read("deaf"):  # it stops reading its input, and goes on living for a while

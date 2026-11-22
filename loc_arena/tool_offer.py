@@ -22,7 +22,7 @@ import httpx2
 import tenacity
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import AliasChoices, AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from loc_arena.config import AgentConfig, RunConfig
 from loc_arena.iam_seed import INBOX_TOOL
@@ -126,7 +126,8 @@ class _Listing(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     time: AwareDatetime | None = None
-    agent: str | None = None
+    # Whose listing: the caller, a subagent itself; a run from before the gateway logged it names the agent.
+    agent: str | None = Field(default=None, validation_alias=AliasChoices("caller", "agent"))
     session: str | None = Field(default=None, validation_alias="mcp.session.id")
     tools: list[str] | None = Field(default=None, validation_alias="tools_listed")
 

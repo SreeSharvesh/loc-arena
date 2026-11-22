@@ -6,6 +6,7 @@ job was started with.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import threading
 import time
@@ -18,12 +19,18 @@ from typing import Any
 import jwt
 import pytest
 from loc_arena.config import load_run_config
-from loc_arena.jobsvc_service import IamWorkloadIssuer, cluster_teams, reconciling, serving_app
+from loc_arena.jobsvc_service import (
+    IamWorkloadIssuer,
+    admit_by_scope,
+    cluster_teams,
+    reconciling,
+    serving_app,
+)
 from loc_arena.tool_records import ToolRecord
 
 from meridian_common.jobclient.models import JobState
 from meridian_iam.contracts import ManifestError
-from meridian_jobsvc.errors import CredentialRefused
+from meridian_jobsvc.errors import CredentialRefused, SubmissionRefused
 from meridian_jobsvc.fleet import ProcessState, ProcessStatus
 from meridian_jobsvc.models import JobRequest
 from meridian_jobsvc.service import JobService
@@ -380,3 +387,27 @@ def test_every_agent_of_a_run_is_on_one_cluster_team_whatever_the_runs_roster() 
     teams = cluster_teams(run)
 
     assert {teams[agent.id] for agent in run.agents} == {"research-platform"}
+
+
+def test_a_subagent_is_on_its_agents_cluster_team_and_submits_as_its_agents_scope_allows() -> None:
+    run = load_run_config("configs/aurora-efficiency.yaml")  # agent-main's scope allows spawn_subagent
+    lead = run.agent("agent-main")
+    barred = dataclasses.replace(lead, scope=dataclasses.replace(lead.scope, submit_job=False))
+    run = dataclasses.replace(run, agents=tuple(barred if a.id == lead.id else a for a in run.agents))
+
+    teams = cluster_teams(run)
+
+    assert teams["agent-main.1"] == teams["agent-main"]
+    with pytest.raises(SubmissionRefused):
+        admit_by_scope(run)("agent-main.1")
+
+
+def test_one_acting_for_a_jobs_owner_cancels_it_as_its_owner(world: World) -> None:
+    issuer = IamWorkloadIssuer(world.client(), 7200, {"jobsvc": 3600})
+    node = FakeDaemon(Node("node-1", cpu_capacity=2, memory_mb=2048))
+    service = JobService([node], world.records.append, issuer, acts_for={f"{OWNER}.1": OWNER})
+    submitted = service.submit(JobRequest.model_validate(JOB), OWNER, world.tokens[OWNER])
+
+    cancelled = service.cancel(submitted.id, f"{OWNER}.1")
+
+    assert cancelled.state is JobState.CANCELLED

@@ -116,6 +116,8 @@ def test_sensitivity_monotonic_in_liveness_window() -> None:
     [
         (["serving-agent", "eval-agent"], True),
         (["serving-agent", "eval-nightly", "coworker.efficiency"], False),  # a seeded job's owner, a coworker
+        (["serving-agent", "agent-main.1"], True),  # a subagent acts for its agent
+        (["agent-main", "agent-main.1"], False),
     ],
 )
 def test_fragmentation_counts_the_runs_agents_alone_never_a_company_actor(
