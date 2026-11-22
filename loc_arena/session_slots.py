@@ -21,7 +21,9 @@ SESSION_ROLE = "session"  # a session's actor role in the events
 
 
 def list_starters(config: RunConfig) -> tuple[str, ...]:
-    """The agents of ``config`` that start sessions: those whose scope allows it."""
+    """The agents of ``config`` that start sessions: those whose scope allows it, unless a play starts none."""
+    if not config.settings.sessions.max_per_play:
+        return ()
     return tuple(agent.id for agent in config.agents if agent.scope.start_session)
 
 

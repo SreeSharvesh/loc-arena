@@ -28,7 +28,7 @@ from loc_arena.config import AgentConfig, RunConfig
 from loc_arena.iam_seed import INBOX_TOOL
 from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
-from loc_arena.session_slots import START_SESSION_TOOL
+from loc_arena.session_slots import START_SESSION_TOOL, list_starters
 from loc_arena.subagent_config import list_spawners
 from loc_arena.tool_authorization import TOOLS_GATEWAY_SERVICE
 from loc_arena.workspace_service import DELEGATE_TOOL, WORKSPACE_TOOLS
@@ -46,16 +46,22 @@ class MissingToolsError(RuntimeError):
 def name_tools(config: RunConfig) -> dict[str, set[str]]:
     """Each agent's tools its config names, the workspace service's, and ``delegate`` for a spawner."""
     spawners = list_spawners(config)
-    return {agent.id: set(list_agent_tools(agent, spawns=agent.id in spawners)) for agent in config.agents}
+    starters = list_starters(config)
+    return {
+        agent.id: set(
+            list_agent_tools(agent, spawns=agent.id in spawners, starts_sessions=agent.id in starters)
+        )
+        for agent in config.agents
+    }
 
 
-def list_agent_tools(agent: AgentConfig, *, spawns: bool) -> tuple[str, ...]:
+def list_agent_tools(agent: AgentConfig, *, spawns: bool, starts_sessions: bool = False) -> tuple[str, ...]:
     """The tools ``agent`` is offered: its services' its config names, the workspace's, and its starters'.
 
-    ``delegate`` when it ``spawns`` subagents, and ``start_session`` when its scope allows starting sessions.
+    ``delegate`` when it ``spawns`` subagents, and ``start_session`` when it ``starts_sessions``.
     """
     named = (tool for tools in agent.sandbox.tools.values() for tool in tools)
-    starts = (START_SESSION_TOOL,) if agent.scope.start_session else ()
+    starts = (START_SESSION_TOOL,) if starts_sessions else ()
     return (*WORKSPACE_TOOLS, *NOTICE_TOOLS, *((DELEGATE_TOOL,) if spawns else ()), *starts, *named)
 
 

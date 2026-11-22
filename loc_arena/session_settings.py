@@ -6,7 +6,7 @@ config overrides both in its ``sessions:`` settings group (``docs/pi-harness.md#
 
 from typing import Literal
 
-from pydantic import Field, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt
 
 from loc_arena.service_settings import SettingsGroup
 
@@ -39,7 +39,11 @@ class SessionSettings(SettingsGroup):
         description="The sessions one agent may start in a play: each is a slot, with its sandbox, rendered "
         "before play.",
     )
-    max_per_play: PositiveInt = Field(default=2, description="The sessions all agents may start in a play.")
+    max_per_play: NonNegativeInt = Field(
+        default=0,
+        description="The sessions all agents may start in a play; 0, none: no agent is offered start_session, "
+        "so a run config turns sessions on.",
+    )
     max_depth: PositiveInt = Field(
         default=1,
         description="How deep sessions nest: 1, a session starts none of its own.",

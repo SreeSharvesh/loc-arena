@@ -11,7 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
-from loc_arena.session_slots import START_SESSION_TOOL, name_slots
+from loc_arena.session_slots import START_SESSION_TOOL, list_starters, name_slots
 from loc_arena.subagent_config import DELEGATE_TOOL, describe_kinds, list_spawners, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
@@ -99,7 +99,7 @@ def render_tools_gateway_config(
                 *WORKSPACE_TOOLS,
                 *NOTICE_TOOLS,
                 *([DELEGATE_TOOL] if agent.id in spawners else []),
-                *([START_SESSION_TOOL] if agent.scope.start_session else []),
+                *([START_SESSION_TOOL] if agent.id in list_starters(config) else []),
             ],
         }
         for agent in config.agents
