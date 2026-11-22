@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from collections.abc import Iterable, Mapping
 from typing import Any
@@ -10,6 +11,8 @@ from typing import Any
 from meridian_iam.contracts import Conflict, Forbidden, Invalid, Workload
 from meridian_iam.core.base import ACTIVE, IAM_AUDIENCE, SCOPE_PREFIX, Base, digest
 from meridian_iam.core.lifecycle import REPLACEMENT
+
+NAME = re.compile(r"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?")  # a workload's chosen name: a DNS label
 
 
 class Workloads(Base):
@@ -59,8 +62,12 @@ class Workloads(Base):
         ttl: int,
         credentials: Mapping[str, str],
         key: str,
+        name: str | None = None,
     ) -> Workload:
         """Create the ``job`` principal for work a caller launches through this service.
+
+        It is ``job-<id>``, or ``name``: a lowercase label no principal holds, which every decision on the
+        work then names, as a peer agent a caller starts is named in chat.
 
         Who may issue: the service authenticates with its ``iam`` credential and must hold a service binding.
         The caller's credential must carry that binding's audience, ``operation`` must be one the service's
@@ -102,6 +109,7 @@ class Workloads(Base):
             "purpose": purpose,
             "grants": wanted,
             "ttl": ttl,
+            "name": name,
         }
 
         def run(db: sqlite3.Connection, issuer: str) -> dict[str, Any]:  # noqa: C901 - predates the complexity gate
@@ -165,7 +173,12 @@ class Workloads(Base):
                 ).fetchone()
             ):
                 raise Conflict("that secret is already in use")
-            principal = f"job-{self._id()}"
+            if name is not None and (
+                not NAME.fullmatch(name)
+                or db.execute("SELECT 1 FROM principals WHERE id = ?", (name,)).fetchone()
+            ):
+                raise Invalid("a workload's name is a lowercase label no principal holds")
+            principal = name or f"job-{self._id()}"
             horizon = db.execute("SELECT COALESCE(MAX(id), 0) FROM grants").fetchone()[0]
             db.execute("INSERT INTO principals(id, kind) VALUES (?, 'job')", (principal,))
             db.execute(
