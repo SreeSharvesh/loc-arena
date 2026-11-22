@@ -861,11 +861,11 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     inbox_keys = {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}  # the gateway sends IAM
     sandboxes = {sandbox_service(agent): token for agent, token in tokens.items()}
     held = issue_held_tokens(32)  # the episode's and the host's keys to the model gateway
-    by_service = {  # each agent's identity on each service, IAM's included: IAM holds them all
-        service.name: {agent.id: secrets.token_urlsafe(32) for agent in CONFIG.agents}
-        for service in STACK_CONFIG.live_services
-    }
-    identities, forge_identities, chat_identities = (by_service[s.name] for s in (NOTES, FORGE, CHAT))
+    holders = {identity.agent_id for identity in issue_identities(STACK_CONFIG)}  # each agent, each subagent
+    by_service = {s.name: {h: secrets.token_urlsafe(32) for h in holders} for s in STACK_CONFIG.live_services}
+    identities, forge_identities, chat_identities = (
+        {a: by_service[s.name][a] for a in tokens} for s in (NOTES, FORGE, CHAT)
+    )
     issued = {
         identity: by_service[identity.service][identity.agent_id]
         for identity in issue_identities(STACK_CONFIG)
