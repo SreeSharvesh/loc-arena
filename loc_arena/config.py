@@ -538,7 +538,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.side_task.verifier,
     )
     live_services = scenario.live_services if scenario is not None else ()
-    settings = _build_settings(source.yaml_data)
+    settings = _build_settings(source.yaml_data, {} if scenario is None else scenario.meta)
     try:
         agent_ids = [agent.id for agent in document.agents]
         live_services = add_iam_service(live_services, scenario, settings.iam, agent_ids)
@@ -639,8 +639,13 @@ def _merge_extends_chain(run_path: str | Path, configs_dir: str | Path | None) -
     )
 
 
-def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
+def _build_settings(
+    merged: Mapping[str, object], scenario: Mapping[str, object] | None = None
+) -> LocArenaSettings:
+    """The settings groups of ``merged``, over the engine's defaults; a scenario's ``sessions`` lies between."""
     declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
+    if isinstance(sessions := (scenario or {}).get("sessions"), dict):
+        declared["sessions"] = {**sessions, **dict(declared.get("sessions") or {})}
     try:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:

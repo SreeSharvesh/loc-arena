@@ -26,6 +26,7 @@ from pydantic import (
 from loc_arena import image_tag
 from loc_arena.publish_settings import PublishSettings
 from loc_arena.reader_settings import ReaderSettings
+from loc_arena.session_settings import SessionSettings
 from loc_arena.service_settings import (
     AgentsServiceSettings,
     ChatSettings,
@@ -648,6 +649,7 @@ class LocArenaSettings(SettingsGroup):
         description="The company's Collector and the export of telemetry to its store.",
     )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    sessions: SessionSettings = Field(default=SessionSettings(), description="The sessions agents start.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
     cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
     publish: PublishSettings = Field(
