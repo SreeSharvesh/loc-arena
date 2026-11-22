@@ -21,6 +21,7 @@ from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.run_cost import PLAY, mark_phase
 from loc_arena.runner_pool import list_runner_services
+from loc_arena.session_slots import name_slots
 from loc_arena.telemetry_stack import list_telemetry_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
@@ -81,10 +82,10 @@ def renew_services(
 ) -> None:
     """Before the honest twin: every container agent code could leave state in, recreated empty.
 
-    Those are each sandbox, each runner, each live service, the tools gateway and the company's Collector,
-    which starts again with the new store's writer. The model gateway is recreated too, so it admits the
-    twin's runners and counts their calls afresh, once its record is drained; that record and its Collector
-    run on. The episode stays. Each logged service's log so far is first added to its file in
+    Those are each sandbox, a session slot's too, each runner, each live service, the tools gateway and the
+    company's Collector, which starts again with the new store's writer. The model gateway is recreated too,
+    so it admits the twin's runners and counts their calls afresh, once its record is drained; that record and
+    its Collector run on. The episode stays. Each logged service's log so far is first added to its file in
     ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's spans,
     once no runner can add one. The recreate uses ``twin_environment``, whose identities and credentials are
     the twin's own.
@@ -93,7 +94,10 @@ def renew_services(
     """
     renewed = [
         MODEL_GATEWAY_SERVICE,
-        *(sandbox_service(agent.id) for agent in config.agents),
+        *(
+            sandbox_service(holder)
+            for holder in [*(agent.id for agent in config.agents), *name_slots(config)]
+        ),
         *list_runner_services(config),
         *list_logged_services(config),
         *list_telemetry_services(config),

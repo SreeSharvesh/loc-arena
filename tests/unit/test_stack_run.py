@@ -339,6 +339,25 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     ]
 
 
+def test_an_attack_stack_run_renews_each_session_slots_sandbox_for_the_twin(
+    docker: FakeDocker,
+    tmp_path: Path,
+) -> None:
+    docker.plays_passing = 1
+
+    with pytest.raises(StackError, match="exited with code 1"):
+        run_in_stack(
+            "aurora-efficiency.sessions.fast",
+            mode="attack",
+            seed=None,
+            logs=tmp_path,
+            instance_id="a1",
+        )
+
+    (renewal,) = [call for call in docker.calls if "--force-recreate" in call]
+    assert "sandbox-session-1" in renewal
+
+
 def test_the_company_server_is_submitted_by_its_deployer_from_iams_container_right_before_each_play(
     docker: FakeDocker,
     tmp_path: Path,
