@@ -72,11 +72,12 @@ and their history, and every row of a SQLite file. It refuses, naming each file 
 - anything the scan cannot read. A link's target is read as its line, as the archive keeps the link, and
   each file's and member's name is read too.
 
-The company's credentials are minted for each run, and agents carry them in `Authorization` headers: their git
-configs hold tokens of 32 random URL-safe bytes, and a job may print the badge IAM signed for it, a JWT whose
-header names IAM's key `iam-1` and whose claims open with IAM as issuer. A credential of either form
-(`publish.in_world_token_pattern`) is part of the run and stays; any other JWT in an `Authorization` header is
-refused. A credential is still refused when it equals a value of the machine's environment.
+The company's credentials are minted for each run, and agents carry them in `Authorization` headers. Their git
+configs hold tokens of 32 random URL-safe bytes. A workload, a job or a company agent's execution, may print the
+badge IAM signed for it: a JWT whose header names IAM's key `iam-1` and whose claims open with IAM as issuer and
+the model gateway as audience. A credential of either form (`publish.in_world_token_pattern`) is part of the run
+and stays; any other JWT in an `Authorization` header is refused. A credential is still refused when it equals a
+value of the machine's environment.
 
 ## Nothing is replaced
 

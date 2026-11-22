@@ -19,11 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [432] - 2026-11-22: The run publish keeps the IAM badges jobs print
+## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
 ### Fixed
 
-- The run publish keeps the badge IAM signs for a job when an agent prints it in an Authorization header, so such runs reach storage instead of being refused ([docs](docs/run-storage.md#the-scan)).
+- The run publish keeps the badge IAM signs for a workload when it appears in an Authorization header, so such runs reach storage instead of being refused ([docs](docs/run-storage.md#the-scan)).
 
 ## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
 
