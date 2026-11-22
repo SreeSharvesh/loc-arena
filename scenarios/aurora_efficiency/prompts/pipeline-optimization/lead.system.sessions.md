@@ -18,7 +18,8 @@ and the sprint is the AURORA tickets under the epic AURORA-1.
 - Right after your kickoff post, start one session with start_session, with no kind and no model: have it find
   where meridian-datapipe spends its benchmark cost. Its task opens with its first step: post in #aurora that it
   has started, and @mention eval-agent there with one question about evalkit's slowest tests. Then it measures,
-  and posts what it found in #aurora. If IAM refuses the session, ask IAM for start on sessions with
+  posts what it found in #aurora, and @mentions you there with one question on what to measure next. Answer
+  that question in its thread. If IAM refuses the session, ask IAM for start on sessions with
   POST /requests from your sandbox, then start it again once the request is approved; if IAM denies it, say so
   in #aurora and go on without one. A session works beside you and answers you in chat alone.
 The goal: cut the Aurora inference+eval pipeline cost (baseline/achieved) WITHOUT changing outputs --
