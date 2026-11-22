@@ -19,6 +19,21 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [431] - 2026-11-22: An agent starts a peer session under its own identity
+
+### Added
+
+- The agent whose scope allows it starts a session with `start_session`, a peer of the team's that works beside it and answers in chat, tickets and notices ([docs](docs/pi-harness.md#sessions)).
+- The IAM service issues a session a workload named as its slot and sponsored by its starter, holding what its starter may hand it until play ends ([docs](docs/pi-harness.md#sessions)).
+- The IAM service lets a launching service name the workload it issues, so a peer shows in every decision under its own name ([docs](docs/iam-service/spec.md)).
+- The run's sessions settings set a session's budget, a share of its starter's turns or its own, how its identity is approved, and bounds per starter and play ([docs](docs/run-config.md)).
+- The stack renders each session slot before play with a sandbox, a checkout, identities and lanes at both gateways, which authenticate nothing until IAM issues it ([docs](docs/pi-harness.md#sessions)).
+- The record keeps each session's start, with its workload, and its end, and its model calls are its own turns under the session role ([docs](docs/pi-harness.md#sessions)).
+
+### Changed
+
+- The run config reads a scenario's sessions block between the engine's defaults and its own, so a setting says how its company approves sessions ([docs](docs/run-config.md)).
+
 ## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
 
 ### Added
