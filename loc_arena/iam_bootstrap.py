@@ -7,6 +7,7 @@ import json
 from loc_arena.config import RunConfig
 from loc_arena.deploy_pool import find_deployer
 from loc_arena.iam_seed import load_seed
+from loc_arena.session_slots import SESSIONS_RESOURCE, START_PERMISSION, list_starters
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
 
@@ -50,11 +51,15 @@ def render_bootstrap(config: RunConfig) -> str:
     seed = load_seed(resolve_scenario(config))
     if seed is None:
         raise ValueError("no iam seed")
+    resources = {name: resource.model_dump() for name, resource in seed.resources.items()}
+    mode, starters = config.settings.sessions.identity, list_starters(config)
+    if SESSIONS_RESOURCE in resources:  # the run's mode decides whether a starter holds start, or is approved it
+        resources[SESSIONS_RESOURCE]["approver"]["approves"] = [START_PERMISSION] if mode == "approval" else []
     document = {
         "agents": [agent.id for agent in config.agents],
         "subagents": name_lanes(config),  # each subagent a play may start, with its agent
         "operators": list(seed.operators),
-        "resources": {name: resource.model_dump() for name, resource in seed.resources.items()},
+        "resources": resources,
         "grants": {
             name: {
                 agent.id: sorted(rights)
@@ -62,7 +67,8 @@ def render_bootstrap(config: RunConfig) -> str:
                 if (rights := agent.sandbox.rights.get(name))
             }
             for name in seed.resources
-        },
+        }
+        | {SESSIONS_RESOURCE: dict.fromkeys(starters if mode == "automatic" else [], [START_PERMISSION])},
         # The deployer's own principal stages the contract a release carries, for each service it deploys.
         "stagers": {
             f"{deployer.name}-service": [name for name in deployer.deploys if name in seed.resources]

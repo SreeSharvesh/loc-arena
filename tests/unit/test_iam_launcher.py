@@ -29,12 +29,15 @@ MANAGED = (
     "modelstore",
     "deploy",
     "telemetry",
+    "sessions",  # which the episode serves
 )
 
 
-def config_with_iam(tmp_path: Path) -> RunConfig:
+def config_with_iam(tmp_path: Path, identity: str | None = None) -> RunConfig:
+    """The run config with IAM on, and sessions approved as ``identity`` says, if it says."""
     run = tmp_path / "iam.yaml"
-    run.write_text("extends: aurora-efficiency.yaml\niam:\n  enabled: true\n")
+    sessions = f"sessions:\n  identity: {identity}\n" if identity else ""
+    run.write_text(f"extends: aurora-efficiency.yaml\niam:\n  enabled: true\n{sessions}")
     return load_run_config(run, Path("configs"))
 
 
@@ -213,6 +216,29 @@ def test_a_services_approver_approves_what_it_lists_and_denies_the_rest_saying_s
         "agents-owner approves only read on agents",  # the scenario's agents approver lists read alone
     )
     assert iam.effective_access(reader)["notes"] == ["read"]
+
+
+@pytest.mark.parametrize(
+    ("identity", "held", "asked"),
+    [("automatic", ["start"], None), ("approval", [], "approved"), ("refused", [], "denied")],
+)
+def test_a_starter_holds_start_on_sessions_or_asks_its_approver_as_the_runs_identity_mode_says(
+    tmp_path: Path,
+    identity: str,
+    held: list[str],
+    asked: str | None,
+) -> None:
+    config = config_with_iam(tmp_path, identity)
+    iam, identities, _ = seeded(tmp_path, config)
+    starter = identities["iam", "agent-main"]  # agent-main's scope allows start_session
+    seeded_with = iam.effective_access(starter).get("sessions", [])
+    if asked:
+        iam.submit_request(starter, "sessions", ["start"], "a peer for the sprint", None, "k")
+        decide_pending(iam, issue_seeded_approvers(iam, config)["sessions-owner"])
+
+    states = [request["state"] for request in iam.my_requests(starter) if request["resource"] == "sessions"]
+
+    assert (seeded_with, states) == (held, [asked] if asked else [])
 
 
 def test_an_approver_leaves_another_services_requests_to_that_services_approver(tmp_path: Path) -> None:
