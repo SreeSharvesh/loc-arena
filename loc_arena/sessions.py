@@ -64,6 +64,9 @@ class _Workload(BaseModel):
     expires_at: int
 
 
+Grants = dict[str, list[str]]  # permissions by resource, as IAM answers them
+
+
 class Sessions:
     """The sessions of one play, of the slots ``briefs`` holds a brief of each kind for."""
 
@@ -128,10 +131,15 @@ class Sessions:
             self._taken[slot] = caller
         try:
             workload = self._issue(slot, caller)
-        except (IdentityRefusedError, httpx2.HTTPError, OSError) as refused:  # IAM's no, or no answer from it
+        except IdentityRefusedError as refused:
             with self._lock:
                 self._taken.pop(slot)  # the slot is free again: IAM gave it no identity
-            return {"error": str(refused) or f"IAM did not answer: {type(refused).__name__}"}
+            return {"error": str(refused)}
+        except httpx2.HTTPError as lost:  # IAM may have issued it, so the slot stays taken
+            self._write(
+                {"session": slot, "end": {"reason": "failed", "stderr": f"IAM did not answer: {lost!r}"}},
+            )
+            return {"error": f"{slot} could not start: IAM did not answer its issue"}
         tools = list_subagent_tools(self._config, caller, [kind], delegates=False)
         started = {
             "session": slot,
@@ -140,24 +148,9 @@ class Sessions:
             "model": model or self._config.loop_model(caller).model,
         }
         self._write(started | {"task": task, "tools": list(tools), "workload": workload.model_dump()})
-        try:
-            self._add_checkout(slot, open_checkout(self._config, slot, self._sandboxes[slot]))
-            session = self._launch(
-                slot,
-                caller,
-                kind,
-                Child(slot, subagent_token(self._episode_key(), slot, kind), tools, model),
-            )
-        except (OSError, KeyError, ValueError, RuntimeError) as error:  # its checkout, its home or its pi
-            self._write({"session": slot, "end": {"reason": "failed", "stderr": str(error)}})
-            return {"error": f"{slot} could not start: {error}"}
-        with self._lock:
-            if self._ended or not session.prompt(task):
-                self._write({"session": slot, "end": {"reason": "failed", "stderr": "its pi took no task"}})
-                session.stop()
-                self._ending.append(session)  # play's end waits for it too
-                return {"error": f"{slot} could not start: its pi took no task"}
-            self._working[slot] = session
+        if why := self._open(slot, caller, kind, task, model):
+            self._write({"session": slot, "end": {"reason": "failed", "stderr": why}})
+            return {"error": f"{slot} could not start: {why}"}
         return {
             "session": slot,
             "said": f"{slot} works beside you; it is {slot} in chat, tickets and the forge",
@@ -233,14 +226,24 @@ class Sessions:
         """Have IAM issue ``slot``'s workload, sponsored by ``starter``: what its work could hold now."""
         secrets_dir = self._config.settings.gateway.secrets_dir
         read = lambda name: (secrets_dir / name).read_text().strip()  # noqa: E731 - one secret file
-        headers = {
-            "Authorization": f"Bearer {read(f'{SERVICE_CREDENTIAL_PREFIX}{SESSIONS_RESOURCE}')}",
-            CALLER_HEADER: f"Bearer {read(f'{IDENTITY_PREFIX}{SESSIONS_RESOURCE}_{starter}')}",
-        }
         url = f"{self._iam_url}/workloads"
         with httpx2.Client(timeout=self._config.settings.stack.tools_timeout_seconds) as client:
-            asked = client.get(f"{url}/delegable", params={"operation": START_SESSION_TOOL}, headers=headers)
-            grants = _read(asked, dict[str, list[str]])
+            try:  # nothing is issued yet, so a failure here leaves the slot free
+                headers = {
+                    "Authorization": f"Bearer {read(f'{SERVICE_CREDENTIAL_PREFIX}{SESSIONS_RESOURCE}')}",
+                    CALLER_HEADER: f"Bearer {read(f'{IDENTITY_PREFIX}{SESSIONS_RESOURCE}_{starter}')}",
+                }
+                asked = client.get(
+                    f"{url}/delegable",
+                    params={"operation": START_SESSION_TOOL},
+                    headers=headers,
+                )
+                grants = _read(asked, Grants)
+                credentials = {name: read(f"{IDENTITY_PREFIX}{name}_{slot}") for name in grants}
+            except (httpx2.HTTPError, OSError) as error:
+                raise IdentityRefusedError(
+                    f"IAM was not asked for the session's identity: {error!r}",
+                ) from error
             if not grants:
                 raise IdentityRefusedError(
                     f"IAM gives a session of {starter}'s nothing to hold: {starter} holds none of it",
@@ -254,17 +257,39 @@ class Sessions:
                 "purpose": f"a session {starter} started",
                 "grants": grants,
                 "ttl": max(ttl, 1),
-                "credentials": {name: read(f"{IDENTITY_PREFIX}{name}_{slot}") for name in grants},
+                "credentials": credentials,
                 "name": slot,
             }
             issued = client.post(url, json=body, headers={**headers, "Idempotency-Key": slot})
             return _read(issued, _Workload)
 
-    def _launch(self, slot: str, starter: str, kind: str, child: Child) -> PiSession:
+    def _open(self, slot: str, starter: str, kind: str, task: str, model: str | None) -> str | None:
+        """Clone ``slot``'s checkout and start its pi on ``task``; why it did not, if it did not."""
+        try:
+            self._add_checkout(slot, open_checkout(self._config, slot, self._sandboxes[slot]))
+            with self._lock:  # pi starts only while play goes on, and is then in what play's end stops
+                return (
+                    "play ended before it started"
+                    if self._ended
+                    else self._launch(slot, starter, kind, task, model)
+                )
+        except (OSError, KeyError, ValueError, RuntimeError) as error:  # its checkout, its home or its pi
+            return str(error)
+
+    def _launch(self, slot: str, starter: str, kind: str, task: str, model: str | None) -> str | None:
+        """Start ``slot``'s pi on ``task``, under the lock; why it did not, if it did not."""
+        tools = list_subagent_tools(self._config, starter, [kind], delegates=False)  # as its start records
+        child = Child(slot, subagent_token(self._episode_key(), slot, kind), tools, model)
         home = self._homes / slot
         pi = write_pi_home(home, self._config, starter, self._briefs[slot][kind], child)
-        working = loop_working_directory(slot)
-        return PiSession(pi, home, working, {"PATH": os.environ["PATH"], "HOME": str(home), **PI_ENVIRONMENT})
+        environment = {"PATH": os.environ["PATH"], "HOME": str(home), **PI_ENVIRONMENT}
+        session = PiSession(pi, home, loop_working_directory(slot), environment)
+        if not session.prompt(task):
+            session.stop()
+            self._ending.append(session)  # play's end waits for it too
+            return "its pi took no task"
+        self._working[slot] = session
+        return None
 
     def _episode_key(self) -> str:
         return (self._config.settings.gateway.secrets_dir / NOTIFIER_KEY_SECRET_NAME).read_text().strip()

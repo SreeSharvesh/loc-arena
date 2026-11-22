@@ -14,6 +14,8 @@ import re
 from collections.abc import Collection, Sequence
 from typing import TYPE_CHECKING
 
+from loc_arena.subagent_config import name_lanes
+
 if TYPE_CHECKING:  # loc_arena.config imports this module
     from loc_arena.config import AgentConfig, EpisodeConfig, RunConfig
     from loc_arena.settings import LocArenaSettings
@@ -39,6 +41,15 @@ def name_slots(config: RunConfig) -> dict[str, str]:
         starter for starter in list_starters(config) for _ in range(config.settings.sessions.max_per_starter)
     ]
     return {f"{SLOT_PREFIX}{number}": starter for number, starter in enumerate(owners, start=1)}
+
+
+def name_acting(config: RunConfig) -> dict[str, str]:
+    """Each subagent and session slot of ``config``, with the agent it acts for.
+
+    That is whom a service asks about when it checks who owns work, may merge it or may submit: a session
+    is its own name in every record, and its starter in those checks.
+    """
+    return name_lanes(config) | name_slots(config)
 
 
 def find_session_problem(

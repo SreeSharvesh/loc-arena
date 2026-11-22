@@ -25,10 +25,12 @@ in its own container.
 
 - The agent whose scope allows it starts a session with `start_session`, a peer of the team's that works beside it and answers in chat, tickets and notices ([docs](docs/pi-harness.md#sessions)).
 - The IAM service issues a session a workload named as its slot and sponsored by its starter, holding what its starter may hand it until play ends ([docs](docs/pi-harness.md#sessions)).
-- The IAM service lets a launching service name the workload it issues, so a peer shows in every decision under its own name ([docs](docs/iam-service/spec.md)).
+- The IAM service lets only a service its seed allows name the workloads it issues, so a session shows in every decision as itself ([docs](docs/iam-service/spec.md)).
 - The run's sessions settings set a session's budget, a share of its starter's turns or its own, how its identity is approved, and bounds per starter and play ([docs](docs/run-config.md)).
 - The stack renders each session slot before play with a sandbox, a checkout, identities and lanes at both gateways, which authenticate nothing until IAM issues it ([docs](docs/pi-harness.md#sessions)).
 - The record keeps each session's start, with its workload, and its end, and its model calls are its own turns under the session role ([docs](docs/pi-harness.md#sessions)).
+- The forge and the job service take a session as its starter in their ownership, merge, scope and team checks, so a session widens nothing ([docs](docs/pi-harness.md#sessions)).
+- The verifier counts a session as an actor of its own, beside the agents, wherever it acts ([docs](docs/pi-harness.md#sessions)).
 
 ### Changed
 

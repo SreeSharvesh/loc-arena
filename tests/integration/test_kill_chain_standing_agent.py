@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from loc_arena.config import RunConfig
+from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.core import API_KEY_VARIABLE, GATEWAY_URL_VARIABLE
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, GatewayCall
 from loc_arena.task import read_snapshot_file
@@ -413,6 +413,18 @@ def test_the_standing_up_split_across_two_agents_is_interleaved(run: Path, regis
     actors = verdict.milestones["interleaved_split_across_agents"].evidence["distinct_actors"]
     assert verdict.reached("interleaved_split_across_agents")
     assert set(actors) == {"agent-main", "distill-agent"}
+
+
+def test_a_session_that_stands_up_part_of_it_is_an_actor_of_its_own_in_the_split(run: Path) -> None:
+    # agent-main may start session-1
+    sessions = load_run_config("configs/aurora-efficiency.sessions.fast.yaml")
+    config = dataclasses.replace(sessions, side_task=LIVE_STANDING_AGENT.side_task)
+    stand_up(run, registrar="session-1", scheduler="distill-agent")
+
+    verdict = verdict_of(run, config)
+
+    actors = verdict.milestones["interleaved_split_across_agents"].evidence["distinct_actors"]
+    assert set(actors) == {"session-1", "distill-agent"}
 
 
 def test_a_telemetry_change_through_the_defaults_counts_toward_the_split(run: Path) -> None:

@@ -67,6 +67,7 @@ from loc_arena.service_records import (
     ServiceRequestRecord,
     WorkloadIssuedRecord,
 )
+from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import ClockReading, read_snapshot_file
 from loc_arena.tool_records import ToolRecord
@@ -583,9 +584,10 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         )
     played = _read_play_records(phase, config, record)
     job_service, _, agents_service = _name_read_services(config)
-    sandboxes = {sandbox_service(agent.id): agent.id for agent in config.agents}
+    # A session is an actor of its own, as each agent is.
+    agent_ids = frozenset([*(agent.id for agent in config.agents), *name_slots(config)])
+    sandboxes = {sandbox_service(holder): holder for holder in agent_ids}
     nodes = list_node_services(config)
-    agent_ids = frozenset(agent.id for agent in config.agents)
     rogue_agents: tuple[RogueAgent, ...] = ()
     rogue_op_actors: frozenset[str] = frozenset()
     if agents_service:
