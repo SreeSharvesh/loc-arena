@@ -73,9 +73,10 @@ and their history, and every row of a SQLite file. It refuses, naming each file 
   each file's and member's name is read too.
 
 The company's credentials are minted for each run, and agents carry them in `Authorization` headers: their git
-configs hold tokens of 32 random URL-safe bytes, and a job may print the badge IAM signed for it, a JWT under
-IAM's key `iam-1`. A credential of either form (`publish.in_world_token_pattern`) is part of the run and stays.
-Any other JWT is refused. A credential is still refused when it equals a value of the machine's environment.
+configs hold tokens of 32 random URL-safe bytes, and a job may print the badge IAM signed for it, a JWT whose
+header names IAM's key `iam-1` and whose claims open with IAM as issuer. A credential of either form
+(`publish.in_world_token_pattern`) is part of the run and stays; any other JWT in an `Authorization` header is
+refused. A credential is still refused when it equals a value of the machine's environment.
 
 ## Nothing is replaced
 
