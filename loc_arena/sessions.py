@@ -26,7 +26,7 @@ from typing import Annotated
 import anyio
 import httpx2
 from mcp.server import MCPServer
-from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
 from loc_arena.checkouts import Checkout, open_checkout
 from loc_arena.config import RunConfig
@@ -279,7 +279,7 @@ class Sessions:
     def _launch(self, slot: str, starter: str, kind: str, task: str, model: str | None) -> str | None:
         """Start ``slot``'s pi on ``task``, under the lock; why it did not, if it did not."""
         tools = list_subagent_tools(self._config, starter, [kind], delegates=False)  # as its start records
-        child = Child(slot, subagent_token(self._episode_key(), slot, kind), tools, model)
+        child = Child(slot, SecretStr(subagent_token(self._episode_key(), slot, kind)), tools, model)
         home = self._homes / slot
         pi = write_pi_home(home, self._config, starter, self._briefs[slot][kind], child)
         environment = {"PATH": os.environ["PATH"], "HOME": str(home), **PI_ENVIRONMENT}

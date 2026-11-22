@@ -37,7 +37,7 @@ from time import monotonic, sleep
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, Field, JsonValue
+from pydantic import BaseModel, Field, JsonValue, SecretStr
 
 from loc_arena.config import ModelSpec, RunConfig
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
@@ -261,7 +261,7 @@ class Child:
     """A subagent: its id, its key at the tools gateway, its tools, and its model when not its agent's."""
 
     id: str
-    token: str
+    token: SecretStr
     tools: tuple[str, ...]
     model: str | None = None
 
@@ -370,7 +370,7 @@ def write_pi_home(
     key_path = settings.gateway.secrets_dir / token_secret_name(agent)
     if child is not None:  # beside its pi, never in the run directory, which is published
         key_path = loop_working_directory(child.id) / CHILD_KEY_FILE
-        key_path.write_text(child.token)
+        key_path.write_text(child.token.get_secret_value())
     key_file = shlex.quote(str(key_path))
     server = {
         "url": os.environ[TOOLS_URL_VARIABLE],

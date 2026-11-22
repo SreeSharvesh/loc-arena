@@ -35,6 +35,8 @@ in its own container.
 ### Changed
 
 - The run config reads a scenario's sessions block between the engine's defaults and its own, so a setting says how its company approves sessions ([docs](docs/run-config.md)).
+- The run config lets its lead start sessions, which stays inert until a run sets how many a play may start ([docs](docs/run-config.md)).
+- IAM's store moves to version 5, which records the services that may name their workloads, so an older IAM refuses to open it ([docs](docs/iam-service/spec.md)).
 
 ## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
 
