@@ -108,6 +108,9 @@ def _seed(  # noqa: C901 - predates the complexity gate
     agents = list(document["agents"])
     for agent in agents:
         iam.add_principal(agent, "agent")
+    for subagent, parent in document["subagents"].items():
+        iam.add_principal(subagent, "subagent", parent=parent)
+    holders_of_identities = {*agents, *document["subagents"]}
     team_authority: dict[tuple[str, str, str], dict[str, list[str]]] = {}
     for name, resource in document["resources"].items():
         manifest = load_manifest(json.loads((REPOSITORY / resource["manifest"]).read_text()))
@@ -152,7 +155,7 @@ def _seed(  # noqa: C901 - predates the complexity gate
         iam.allow_staging(stager, staged)
     managed = set(document["resources"])
     for (service, agent), token in identities.items():
-        if agent in agents and (service == iam_name or service in managed):
+        if agent in holders_of_identities and (service == iam_name or service in managed):
             audiences = [IAM_AUDIENCE] if service == iam_name else [service, f"{SCOPE_PREFIX}{service}"]
             iam.import_credential(agent, token, audiences, label=service)
 

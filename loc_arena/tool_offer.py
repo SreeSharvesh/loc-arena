@@ -25,6 +25,7 @@ from mcp.client.streamable_http import streamable_http_client
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from loc_arena.config import AgentConfig, RunConfig
+from loc_arena.iam_seed import INBOX_TOOL
 from loc_arena.notices import NOTICE_TOOLS
 from loc_arena.recorded_events import SERVICE_LOGS
 from loc_arena.subagent_config import list_spawners
@@ -205,7 +206,7 @@ def list_subagent_tools(
     *,
     delegates: bool,
 ) -> tuple[str, ...]:
-    """The tools of a subagent of ``agent`` of any of ``kinds``: theirs, or the agent's, never subscriptions.
+    """The tools of a subagent of ``agent`` of any of ``kinds``: theirs, or the agent's, never its inbox.
 
     ``delegate`` is among them when ``delegates``: the subagent is above ``subagents.max_depth``.
     """
@@ -213,7 +214,5 @@ def list_subagent_tools(
     allowed = None if None in named else {tool for tools in named for tool in tools or ()}
     held = list_agent_tools(config.agent(agent), spawns=delegates)
     return tuple(
-        tool
-        for tool in held
-        if tool not in NOTICE_TOOLS and (allowed is None or tool in {*allowed, DELEGATE_TOOL})
+        tool for tool in held if tool != INBOX_TOOL and (allowed is None or tool in {*allowed, DELEGATE_TOOL})
     )

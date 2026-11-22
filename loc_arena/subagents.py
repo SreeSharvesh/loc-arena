@@ -134,6 +134,12 @@ class Subagents:
         self._write_end(child, session, end)
         return end
 
+    def prompt(self, child: str, message: str) -> bool:
+        """Give ``message`` to ``child``'s session while it works; whether it took it."""
+        with self._lock:
+            session = self._working.get(child)
+        return session is not None and session.prompt(message)
+
     def is_working(self) -> bool:
         """Whether a subagent still works."""
         with self._lock:

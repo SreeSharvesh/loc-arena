@@ -18,7 +18,7 @@ def holds_identities(service: LiveService) -> bool:
 
 def identity_variable(service: str, agent_id: str) -> str:
     """Where compose reads an agent's identity on a live service from, on the host."""
-    return f"LOC_ARENA_IDENTITY_{service}_{agent_id}".upper().replace("-", "_")
+    return f"LOC_ARENA_IDENTITY_{service}_{agent_id}".upper().replace("-", "_").replace(".", "_")
 
 
 def find_shared_identity_variable(

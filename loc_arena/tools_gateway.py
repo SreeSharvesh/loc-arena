@@ -188,8 +188,8 @@ def _render_targets(
 ) -> list[Target]:
     """Each service with tools as a target of the route, then the episode's: the workspace, and the notifier.
 
-    A target is sent the calling agent's own credential on it: its identity on a service, its inbox key on
-    IAM; the workspace is sent the caller's workspace key, from ``caller_tokens``, a subagent's its own.
+    A target is sent the caller's own credential on it, a subagent's its own: its identity on a service, its
+    workspace key from ``caller_tokens``; IAM is sent the agent's inbox key, which no subagent is offered.
     A ready image is sent none: it runs no IAM integration to know a caller by, and the gateway enforces
     IAM's decisions for it. The telemetry store's tools are its own MCP server's.
     """
@@ -200,10 +200,12 @@ def _render_targets(
     for service in config.live_services:
         if not service.tools:
             continue
+        by = "caller"  # a target is sent the caller's own credential, a subagent's its own
         if iam.enabled and service.name == iam.service:
-            # IAM's one tool reads the caller's inbox, so the gateway sends the agent's inbox key, which opens
+            # IAM's one tool reads the agent's inbox, so the gateway sends the agent's inbox key, which opens
             # nothing else, and never the agent's identity on IAM, which would let it manage IAM for it.
             callers: Mapping[str, str] | None = inbox_keys
+            by = "agent"
         elif isinstance(service.source, str):
             callers = None
         else:
@@ -211,13 +213,15 @@ def _render_targets(
                 key.agent_id: value for key, value in identities.items() if key.service == service.name
             }
         url = locate_reader(config, service) or f"http://{service.name}:{service.port}{MCP_PATH}"
-        targets.append(_render_target(service.name, url, callers))
+        targets.append(_render_target(service.name, url, callers, by))
     workspace = f"http://{EPISODE_SERVICE}:{config.settings.stack.workspace_port}{MCP_PATH}"
     keys = {caller: workspace_key(token) for caller, token in caller_tokens.items()}
     targets.append(_render_target(WORKSPACE_SERVICE, workspace, keys, by="caller"))
     if notifier_key is not None:  # the same key for every agent's session, and no agent holds it
         notifier = workspace.removesuffix(MCP_PATH) + f"/{TOOL_LIST_NOTIFIER}{MCP_PATH}"
-        targets.append(_render_target(TOOL_LIST_NOTIFIER, notifier, dict.fromkeys(tokens, notifier_key)))
+        targets.append(
+            _render_target(TOOL_LIST_NOTIFIER, notifier, dict.fromkeys(tokens, notifier_key), "agent"),
+        )
     return targets
 
 
@@ -243,7 +247,7 @@ def _render_frontend_policies(config: RunConfig) -> FrontendPolicies:
     return policies
 
 
-def _render_target(name: str, url: str, callers: Mapping[str, str] | None, by: str = "agent") -> Target:
+def _render_target(name: str, url: str, callers: Mapping[str, str] | None, by: str) -> Target:
     """The target ``name`` at ``url``, sent the credential ``callers`` holds for the key's ``by``, if any."""
     if callers is None:
         return {"name": name, "mcp": {"host": url}}

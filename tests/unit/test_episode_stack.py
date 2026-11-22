@@ -524,7 +524,7 @@ def test_identities_that_would_share_one_host_variable_are_refused_naming_both(
         live_services=(notes, dataclasses.replace(notes, name="notes-agent")),
     )
 
-    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), \('notes-agent', 'main'\)"):
+    with pytest.raises(StackError, match=r"\('notes', 'agent-main'\), .*\('notes-agent', 'main'\)"):
         render_compose(config, REPOSITORY, "a-run", [])
 
 
@@ -679,7 +679,7 @@ def test_the_tools_gateway_forwards_each_call_with_the_callers_identity_on_the_s
                     "request": {
                         "set": {
                             "authorization": '"Bearer " + {"agent-main": "id-main", '
-                            '"controlplane-agent": "id-control"}[apiKey.agent]',
+                            '"controlplane-agent": "id-control"}[apiKey.caller]',
                         },
                     },
                 },

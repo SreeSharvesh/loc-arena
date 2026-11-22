@@ -27,7 +27,9 @@ in its own container.
 - The agent's subagent is general-purpose, with every tool and permission its agent holds, unless the call names a kind of the run config's, which narrows its tools ([docs](docs/pi-harness.md#subagents)).
 - The model gateway runs a subagent on its agent's model, or on one the call names from `subagents.models`, with that model's own settings and routing, refusing any other ([docs](docs/pi-harness.md#subagents)).
 - The model gateway counts a subagent's calls in its agent's turn budget on a lane of the agent's route, so its call record names the subagent ([docs](docs/pi-harness.md#subagents)).
-- The tools gateway admits a subagent by its own key as its agent, with that agent's identities and tools, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
+- The IAM service holds each subagent as its own principal, `agent-main.1`, deciding its calls on its agent's current grants, so services name it ([docs](docs/pi-harness.md#subagents)).
+- The tools gateway admits a subagent by its own key, calls each service with its own identity there, and logs it as the caller ([docs](docs/pi-harness.md#subagents)).
+- The agent's subagent takes notices while it works, so a member who writes to it in chat reaches it ([docs](docs/pi-harness.md#subagents)).
 - The record keeps each subagent's session beside the agents', tied to its caller's, and its model calls are its own turns in the events ([docs](docs/pi-harness.md#subagents)).
 - The run config's `subagents` block names further kinds and the models a subagent may choose, and bounds depth, concurrency, number and task length, refusing a call past one ([docs](docs/run-config.md)).
 - The run plays on while a subagent works, and its wall clock ends subagents and agents on one deadline ([docs](docs/pi-harness.md#subagents)).

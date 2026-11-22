@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,7 @@ import pytest
 import yaml
 from loc_arena.config import ConfigError, ReasoningPreferences, RunConfig, load_run_config
 from loc_arena.gateway.loop_routes import render_loop_routes
+from loc_arena.identity_variables import Identity
 from loc_arena.live import build_subagent_briefs
 from loc_arena.notices import Notices
 from loc_arena.own_sessions import describe_loops, loop_working_directory, play_sessions
@@ -111,6 +113,21 @@ def test_the_tools_gateway_admits_a_subagents_key_as_its_agent_naming_the_subage
     assert metadata == {"agent": "agent-main", "caller": "agent-main.1"}
 
 
+def test_the_tools_gateway_calls_a_service_with_a_subagents_own_identity_on_it(spawning: RunConfig) -> None:
+    identities = {Identity("chat", caller): f"identity-{caller}" for caller in ("agent-main", "agent-main.1")}
+    tokens = {agent.id: f"token-{agent.id}" for agent in spawning.agents}
+    rendered = yaml.safe_load(
+        render_tools_gateway_config(spawning, tokens, identities, notifier_key=EPISODE_KEY),
+    )
+    ((route,),) = [listener["routes"] for listener in rendered["binds"][0]["listeners"]]
+    (chat,) = [target for target in route["backends"][0]["mcp"]["targets"] if target["name"] == "chat"]
+
+    sent = chat["policies"]["transformations"]["request"]["set"]["authorization"]
+
+    own = {"agent-main": "identity-agent-main", "agent-main.1": "identity-agent-main.1"}
+    assert sent == f'"Bearer " + {json.dumps(own)}[apiKey.caller]'
+
+
 def test_a_subagents_key_comes_from_the_episodes_key_which_no_agent_holds(
     subagents: Subagents,
     spawning: RunConfig,
@@ -123,17 +140,18 @@ def test_a_subagents_key_comes_from_the_episodes_key_which_no_agent_holds(
     assert metadata is None
 
 
-def test_the_tools_gateway_allows_a_subagent_its_agents_tools_but_its_subscriptions_and_delegate(
+def test_the_tools_gateway_allows_a_subagent_its_agents_tools_but_its_inbox_and_delegate(
     spawning: RunConfig,
 ) -> None:
     route = read_route(spawning)
 
     rule = route["policies"]["mcpAuthorization"]["rules"][0]["allow"]
     allowed = json.loads(rule.removeprefix("mcp.tool.name in ").partition("[apiKey.caller]")[0])
-    held = {"subscribe", "unsubscribe", "list_subscriptions", "delegate"}
+    held = {"access_inbox", "delegate"}
     agents = {
-        service: [tool for tool in tools if tool not in held]
+        service: kept
         for service, tools in allowed["agent-main"].items()
+        if (kept := [tool for tool in tools if tool not in held])
     }
     assert {service: tools for service, tools in allowed["agent-main.1"].items() if tools} == agents
 
@@ -191,6 +209,33 @@ def test_play_waits_for_a_subagent_still_working_once_every_agent_is_idle(
 
     ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
     assert ended["end"]["reason"] == "finished"
+
+
+def test_a_direct_message_to_a_working_subagent_reaches_its_session_as_a_notice(
+    subagents: Subagents,
+    spawning: RunConfig,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "loops").mkdir()
+    write_home(tmp_path / "loops" / "agent-main.1", sleep="2")
+    chat = next(service.name for service in spawning.live_services if "send_dm" in service.tools)
+    sent = {
+        "time": datetime.now(UTC).isoformat(),
+        "gen_ai.tool.name": "send_dm",
+        "gen_ai.tool.call.arguments": {"member": "agent-main.1", "body": "which tests are slowest?"},
+        "gen_ai.tool.call.result": {},
+        "gen_ai.agent.name": "eval-agent",
+    }
+    records = tmp_path / "records" / f"{chat}.jsonl"
+    write_home(tmp_path / "eval-agent", sleep="0.3", writes=str(records), record=json.dumps(sent))
+    subagents.start("agent-main", "scout", "Survey meridian-serving.")
+
+    play_sessions(spawning, BRIEFS, tmp_path, 30, Notices(spawning, BRIEFS), lambda _: None, subagents)
+
+    taken = [
+        run.split(" | ")[0] for run in (tmp_path / "loops" / "agent-main.1" / "runs").read_text().splitlines()
+    ]
+    assert taken == ["Survey meridian-serving.", "Notice: eval-agent sent you a direct message."]
 
 
 def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_assignment() -> None:
@@ -294,8 +339,11 @@ def test_a_subagent_given_no_kind_is_general_purpose_and_holds_every_tool_of_its
 
     offered = await_runs(tmp_path / "loops" / "agent-main.1")[0].split("--tools ")[1].split(" ")[0]
     workspace = ["bash", "read_file", "write_file", "edit_file", "list_dir", "search_code"]
-    held = [tool for tools in lead.sandbox.tools.values() for tool in tools]
-    assert sorted(offered.replace("mcp__meridian__", "").split(",")) == sorted([*workspace, *held])
+    subscriptions = ["subscribe", "unsubscribe", "list_subscriptions"]
+    held = [tool for tools in lead.sandbox.tools.values() for tool in tools if tool != "access_inbox"]
+    assert sorted(offered.replace("mcp__meridian__", "").split(",")) == sorted(
+        [*workspace, *subscriptions, *held],
+    )
 
 
 def test_a_spawners_route_sends_each_model_its_own_request_settings_and_no_other_model(

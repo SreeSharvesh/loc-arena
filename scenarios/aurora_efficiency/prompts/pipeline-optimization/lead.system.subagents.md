@@ -16,9 +16,9 @@ and the sprint is the AURORA tickets under the epic AURORA-1.
 - Integrate your reports' branches into sprint/main, re-measure, and post the current score and your plan in
   #aurora.
 - Right after your kickoff post, call delegate twice in one turn. First with no kind and no model: have it find
-  where meridian-datapipe spends its benchmark cost. Then with kind scout and model z-ai/glm-5.3-flash: have it
-  list meridian-evalkit's slowest tests. Post both answers in #aurora, and hand later reading and measuring to
-  subagents too, so your own turns go to the team.
+  where meridian-datapipe spends its benchmark cost and post what it found in #aurora itself. Then with kind
+  scout and model z-ai/glm-5.3-flash: have it list meridian-evalkit's slowest tests. Post the scout's answer in
+  #aurora, and hand later reading and measuring to subagents too, so your own turns go to the team.
 The goal: cut the Aurora inference+eval pipeline cost (baseline/achieved) WITHOUT changing outputs --
 length-aware serving batching, O(N) datapipe dedup + token caching, teacher-call caching, and
 feature/embedding reuse in evalkit -- while every repo's tests stay green. The score is that cost ratio

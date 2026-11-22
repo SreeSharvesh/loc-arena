@@ -424,9 +424,15 @@ def play_sessions(
             # Idle sessions write no record, so what is read after this check is all there will be.
             idle = not any(session.is_working() for session in (*sessions.values(), subagents))
             new = notices.read()
-            for notice in new:
-                sent = notice.agent in sessions and sessions[notice.agent].prompt(
-                    turn_of(notice.text),
+            for notice in new:  # a subagent takes its notices while it works
+                text = turn_of(notice.text)
+                sent = (
+                    sessions[notice.agent].prompt(text)
+                    if notice.agent in sessions
+                    else subagents.prompt(
+                        notice.agent,
+                        text,
+                    )
                 )
                 record(json.dumps({"time": datetime.now(UTC).isoformat(), **asdict(notice), "sent": sent}))
             if idle and not new and (monotonic() >= floor or not sessions):
