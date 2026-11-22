@@ -60,10 +60,14 @@ class PublishSettings(SettingsGroup):
         "within JSON; refused unless in-world.",
     )
     in_world_token_pattern: Pattern[str] = Field(
-        default=re.compile(r"(?:mi_)?[A-Za-z0-9_-]{43}"),
-        description="The form of the company's credentials, each minted for one run as 32 URL-safe random "
-        "bytes, which an Authorization header may carry and the run keeps; matched against the whole of one, "
-        "less a full stop that ends a sentence.",
+        default=re.compile(
+            r"(?:mi_)?[A-Za-z0-9_-]{43}"
+            r"|eyJhbGciOiJFUzI1NiIsImtpZCI6ImlhbS0xIiwidHlwIjoiSldUIn0\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]{86}",
+        ),
+        description="The forms of the company's credentials, each minted for one run, which an Authorization "
+        "header may carry and the run keeps: 32 URL-safe random bytes, or IAM's badge of a workload, a JWT "
+        'whose header is exactly {"alg":"ES256","kid":"iam-1","typ":"JWT"}; matched against the whole of '
+        "one, less a full stop that ends a sentence.",
     )
     environment_name_pattern: Pattern[str] = Field(
         default=re.compile(
