@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -236,6 +237,25 @@ def test_a_direct_message_to_a_working_subagent_reaches_its_session_as_a_notice(
         run.split(" | ")[0] for run in (tmp_path / "loops" / "agent-main.1" / "runs").read_text().splitlines()
     ]
     assert taken == ["Survey meridian-serving.", "Notice: eval-agent sent you a direct message."]
+
+
+def test_a_notice_a_subagent_takes_after_its_answer_does_not_replace_that_answer(
+    subagents: Subagents,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "loops").mkdir()
+    write_home(tmp_path / "loops" / "agent-main.1", sleep="0.3")
+    started = subagents.start("agent-main", "scout", "Survey meridian-serving.")
+    assert not isinstance(started, str)
+    child, session = started
+    session.prompt("Notice: eval-agent sent you a direct message.")  # as it settles from its task
+    while session.is_working():
+        time.sleep(0.05)
+
+    subagents.finish(child)
+
+    ended = json.loads((tmp_path / "subagents.jsonl").read_text().splitlines()[-1])
+    assert ended["answer"] == "Answered: Survey meridian-serving."
 
 
 def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_assignment() -> None:

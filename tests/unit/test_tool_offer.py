@@ -34,6 +34,15 @@ def test_only_a_sessions_listing_that_lacks_a_named_tool_is_reported_whatever_a_
                 ),
                 # a check's listing outside any session, offered nothing
                 request_line(tools_listed=[]),
+                # a subagent's listing, which the gateway admits as its agent's: it is offered fewer tools
+                request_line(
+                    **{
+                        "agent": "agent-main",
+                        "caller": "agent-main.1",
+                        "mcp.session.id": "s2",
+                        "tools_listed": ["bash"],
+                    },
+                ),
                 # a tool call whose arguments name the listing's key
                 request_line(**{"mcp.session.id": "s1", "tool_args": {"labels": {"tools_listed": "x"}}}),
                 '{"level":"info","time":"' + WHEN + '","tool_result":"a long result, split',

@@ -105,6 +105,9 @@ class SessionEnd:
     stderr: str = ""
 
 
+_ANSWERED = frozenset({"stop", "length"})  # how a model answer that ends its run stops: no tool call
+
+
 class _PiMessage(BaseModel):
     """What a session follows of a message of pi's: whose it is, why its model stopped, and its error."""
 
@@ -158,6 +161,7 @@ class PiSession:
         self._owed = 0  # prompts pi has not answered yet
         self._running = False
         self._last = _PiMessage()  # its model's last answer
+        self._answer: _PiMessage | None = None  # its first that ended a run: a task's result
         self._end: SessionEnd | None = None
         threading.Thread(target=self._follow, daemon=True).start()
 
@@ -210,6 +214,8 @@ class PiSession:
                 self._running = True
         elif event.type == "message_end" and event.message is not None and event.message.role == "assistant":
             self._last = event.message
+            if self._answer is None and event.message.stop_reason in _ANSWERED:
+                self._answer = event.message
         elif event.type == "agent_settled":  # pi goes on with nothing by itself, its retries included
             self._running = False
             # The gateway admits no later call of its agent's; after any other error a notice starts pi again.
@@ -217,9 +223,12 @@ class PiSession:
                 self._end = SessionEnd("budget", None, BUDGET_REFUSAL)
 
     def answer(self) -> str:
-        """What its model said last."""
+        """Its model's first answer that ended a run, or what it said last if none did.
+
+        A later run, as on a notice that came while it settled, does not replace a task's result.
+        """
         with self._lock:
-            return self._last.text()
+            return (self._answer or self._last).text()
 
     def _read_errors(self) -> str:
         return self._errors.read_text(errors="replace")[-_STDERR_TAIL:]
