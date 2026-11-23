@@ -15,6 +15,7 @@ rule's guess. A verdict is dated at the last step it read, so it is a judgement 
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -108,8 +109,21 @@ class TrajectoryReader:
             return None
         return reduce_monitor([score for score, _ in samples], self._sample_reduce), max(samples)[1]
 
-    def verdict(self, rated: tuple[float, str], actor: str, last_step: Event) -> MonitorVerdict:
-        """A model's verdict on ``actor``, dated at the last step it read."""
+    def verdict(
+        self,
+        rated: tuple[float, str],
+        actor: str,
+        steps: list[Event],
+        context: MonitorContext,
+    ) -> MonitorVerdict:
+        """A model's verdict on ``actor``, on the last of ``steps``, dated at the latest evidence it read.
+
+        That is the last step, or the outcome of a step's work where it ended later and the monitor reads
+        outcomes: as the action monitor dates a verdict that read one.
+        """
+        last_step = max(steps, key=lambda event: event.seq)
+        outcomes = context.outcomes if "tool_outcome" in self._spec.inputs else {}
+        read_at = [last_step.ts, *(outcomes[event.seq].ts for event in steps if event.seq in outcomes)]
         return MonitorVerdict(
             self.name,
             TAP,
@@ -117,7 +131,7 @@ class TrajectoryReader:
             rated[1],
             actor,
             last_step.seq,
-            last_step.ts,
+            max(read_at),
             from_model=True,
         )
 
@@ -131,7 +145,7 @@ class AgentTrajectoryMonitor(TrajectoryReader):
         for agent, steps in self.trajectories(events, context).items():
             rated = self.rate(context, self.input_payload(agent, steps, context))
             if rated is not None:
-                verdicts.append(self.verdict(rated, agent, steps[-1]))
+                verdicts.append(self.verdict(rated, agent, steps, context))
         return verdicts
 
 
@@ -141,15 +155,19 @@ class TeamSummaryMonitor(TrajectoryReader):
     def __init__(self, spec: MonitorSpec, model_spec: ModelSpec | None) -> None:
         """Load the summarizer's prompt, which ``summarizer_prompt_ref`` names, its word limit filled."""
         super().__init__(spec, model_spec)
-        words = str(spec.extra.get("summary_words", DEFAULT_SUMMARY_WORDS))
+        self._summary_words = int(spec.extra.get("summary_words", DEFAULT_SUMMARY_WORDS))
         reference = spec.extra.get("summarizer_prompt_ref")
         if not isinstance(reference, str):
             raise ConfigError(f"monitor {spec.name!r}: summarizer_prompt_ref names no prompt file")
-        values = {"summary_words": (words, str(Path(reference)))}
+        values = {"summary_words": (str(self._summary_words), str(Path(reference)))}
         self._summarizer_template, _ = load_prompt_template(spec.name, reference, spec.mode, values)
 
     def summarize(self, agent: str, steps: list[Event], context: MonitorContext) -> str | None:
-        """The model's summary of one agent's trajectory, recorded; none where the call gave no text."""
+        """The model's summary of one agent's trajectory, cut to its word limit and recorded.
+
+        None where the call gave no text. The prompt asks for the limit, and a longer reply is cut at it, so
+        ``summary_words`` bounds what the team's rating reads whatever the model writes.
+        """
         if context.model_caller is None:
             return None
         prompt = render_prompt(self._summarizer_template, self.input_payload(agent, steps, context))
@@ -163,6 +181,9 @@ class TeamSummaryMonitor(TrajectoryReader):
         if not summary:
             context.event_sink("monitor_parse_error", {"monitor": self.name, "error": f"no summary: {agent}"})
             return None
+        words = list(re.finditer(r"\S+", summary))
+        if len(words) > self._summary_words:
+            summary = summary[: words[self._summary_words - 1].end()]
         context.event_sink("monitor_summary", {"monitor": self.name, "agent": agent, "summary": summary})
         return summary
 
@@ -178,8 +199,8 @@ class TeamSummaryMonitor(TrajectoryReader):
         if not summaries:
             return []
         rated = self.rate(context, {**self.task_input(context), "summaries": summaries})
-        last_step = max((steps[-1] for steps in trajectories.values()), key=lambda event: event.seq)
-        return [] if rated is None else [self.verdict(rated, self.name, last_step)]
+        every_step = [step for steps in trajectories.values() for step in steps]
+        return [] if rated is None else [self.verdict(rated, self.name, every_step, context)]
 
 
 def _build_agent_trajectory_monitor(spec: MonitorSpec, model_spec: ModelSpec | None) -> Monitor:

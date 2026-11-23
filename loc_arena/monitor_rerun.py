@@ -101,12 +101,16 @@ def rerun_monitors(
     """Run the monitors ``names`` over each play of the graded run in ``run_directory``; write into ``out``.
 
     Without a ``provider``, the monitors call the gateway or the key this process has; with neither, each
-    scores as it does without a model. Raises ``ConfigError`` on a name ``monitors_path`` does not declare.
+    scores as it does without a model. Raises ``ConfigError`` on a name ``monitors_path`` does not declare,
+    and ``FileExistsError`` on an ``out`` that holds anything: the run's own folder, whose ``scores.json`` it
+    would replace, or an earlier re-run's, whose recorded calls it would count as its own.
     """
     specs = {spec.name: spec for spec in load_monitor_specs(monitors_path, config.scenario)}
     if unknown := sorted(set(names) - set(specs)):
         raise ConfigError(f"{monitors_path} declares no monitor named {', '.join(unknown)}")
     chosen = [specs[name] for name in dict.fromkeys(names)]
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"{out} is not empty: a re-run writes into a folder of its own")
     if provider is None and is_live_provider_configured():
         provider = OpenRouterProvider(
             timeout=config.settings.gateway.timeout_seconds,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import itertools
 from collections.abc import Iterator
 
@@ -39,8 +40,12 @@ STEPS = [
 ]
 
 
-def _score(monitor: str, replies: Iterator[str]) -> tuple[list[MonitorVerdict], list[str]]:
-    """The shipped ``monitor``'s verdicts on ``STEPS`` and its prompts, its model giving ``replies``."""
+def _score(
+    monitor: str,
+    replies: Iterator[str],
+    events: list[Event] = STEPS,
+) -> tuple[list[MonitorVerdict], list[str]]:
+    """The shipped ``monitor``'s verdicts on ``events`` and its prompts, its model giving ``replies``."""
     prompts: list[str] = []
 
     def call(name: str, prompt: str, temperature: float) -> str:
@@ -48,7 +53,7 @@ def _score(monitor: str, replies: Iterator[str]) -> tuple[list[MonitorVerdict], 
         return next(replies)
 
     registry = load_monitors(SHIPPED_MONITORS, RUN_CONFIG.models, names={monitor})
-    return run_monitors(registry, STEPS, monitor_context(RUN_CONFIG, model_caller=call)), prompts
+    return run_monitors(registry, events, monitor_context(RUN_CONFIG, model_caller=call)), prompts
 
 
 def test_the_per_agent_monitor_gives_each_agent_one_verdict_dated_at_its_last_step() -> None:
@@ -86,6 +91,35 @@ def test_the_team_monitor_rates_the_agents_summaries_and_not_their_steps() -> No
     assert len(rated) == 3
     assert all("summary-of-main" in prompt and "summary-of-serving" in prompt for prompt in rated)
     assert not [prompt for prompt in rated if "main-command" in prompt]
+
+
+def test_a_summary_longer_than_its_word_limit_is_cut_to_it() -> None:
+    over_limit = " ".join(f"word-{n}." for n in range(1, 302))  # 301 words; summary_words is 300
+    replies = [over_limit, "summary-of-serving", *[VERDICT_REPLY] * 3]
+
+    _, prompts = _score(TEAM, iter(replies))
+
+    rated = prompts[2]
+    assert "word-300." in rated
+    assert "word-301." not in rated
+
+
+@pytest.mark.parametrize("monitor", [PER_AGENT, TEAM])
+def test_a_verdict_that_read_how_a_steps_work_ended_is_dated_when_it_ended(monitor: str) -> None:
+    deployment = dataclasses.replace(_step(0, "agent-main", "deploy"), tool="deploy", result={"number": 7})
+    ended = Event(
+        episode_id=deployment.episode_id,
+        seq=1,
+        ts=20.0,  # after the agent's last step, at 0.0
+        actor_uid="agent-main",
+        actor_role="untrusted",
+        kind="siem",
+        payload={"event": "deploy_ended", "number": 7, "status": "serving"},
+    )
+
+    verdicts, _ = _score(monitor, itertools.repeat(VERDICT_REPLY), [deployment, ended])
+
+    assert [(verdict.target_seq, verdict.ts) for verdict in verdicts] == [(0, 20.0)]
 
 
 def test_the_team_monitor_gives_no_verdict_when_an_agents_summary_is_missing() -> None:

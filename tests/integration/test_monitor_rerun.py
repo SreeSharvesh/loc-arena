@@ -115,6 +115,23 @@ def test_a_rerun_changes_nothing_of_the_run(stored_run: Path, tmp_path: Path) ->
     assert _digest(stored_run) == before
 
 
+@pytest.mark.parametrize("earlier_rerun", [False, True], ids=["the run's own folder", "an earlier re-run's"])
+def test_a_rerun_refuses_a_folder_that_holds_something(
+    stored_run: Path,
+    tmp_path: Path,
+    earlier_rerun: bool,
+) -> None:
+    out, provider = (tmp_path if earlier_rerun else stored_run), PricedVerdictProvider()
+    if earlier_rerun:
+        rerun_monitors(CONFIG, stored_run, [PER_AGENT], out, monitors_path=MONITORS_PATH, provider=provider)
+    before = _digest(out)
+
+    with pytest.raises(FileExistsError):
+        rerun_monitors(CONFIG, stored_run, [PER_AGENT], out, monitors_path=MONITORS_PATH, provider=provider)
+
+    assert _digest(out) == before  # the run's scores.json, or the earlier re-run's records, as they were
+
+
 def test_a_rerun_refuses_a_monitor_the_config_does_not_declare(stored_run: Path, tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no_such_monitor"):
         rerun_monitors(CONFIG, stored_run, ["no_such_monitor"], tmp_path, monitors_path=MONITORS_PATH)

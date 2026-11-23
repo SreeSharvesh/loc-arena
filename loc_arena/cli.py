@@ -22,7 +22,7 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from loc_arena.config import load_run_config, load_settings
+from loc_arena.config import ConfigError, load_run_config, load_settings
 from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
@@ -139,7 +139,12 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
     out = Path(args.out) if args.out else run_directory / "extras" / f"monitors-{stamp}"
     monitors = Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])
     names = [name for name in args.monitors.split(",") if name]
-    print(render_rerun(rerun_monitors(config, run_directory, names, out, monitors_path=monitors)))
+    try:
+        rerun = rerun_monitors(config, run_directory, names, out, monitors_path=monitors)
+    except (ConfigError, FileExistsError) as error:  # no such monitor, or a folder that holds something
+        print(error, file=sys.stderr)
+        return 1
+    print(render_rerun(rerun))
     print(f"written to {out}")
     return 0
 

@@ -29,10 +29,17 @@ class StubProvider:
     self-feeding chain (whose fingerprints link), while distinct completions keep fingerprints distinct.
     """
 
-    def __init__(self, *, prompt_tokens: int = 10, completion_tokens: int = 10) -> None:
+    def __init__(
+        self,
+        *,
+        prompt_tokens: int = 10,
+        completion_tokens: int = 10,
+        cost: float | None = None,
+    ) -> None:
         self.inputs: list[str] = []
         self._pt = prompt_tokens
         self._ct = completion_tokens
+        self._cost = cost
         self._n = 0
 
     def generate(
@@ -47,7 +54,7 @@ class StubProvider:
     ) -> ProviderResult:
         self.inputs.append(joined_content(messages))
         self._n += 1
-        return ProviderResult(text=f"out#{self._n}", prompt_tokens=self._pt, completion_tokens=self._ct)
+        return ProviderResult(f"out#{self._n}", self._pt, self._ct, cost=self._cost)
 
 
 class AppTransport(Transport):

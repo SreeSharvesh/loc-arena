@@ -598,6 +598,7 @@ class GatewayCore:
                 prompt_tokens=result.prompt_tokens,
                 completion_tokens=result.completion_tokens,
                 cached_tokens=result.cached_tokens,
+                cost=result.cost,
             )
             if self._trace is not None:
                 self._trace.on_model_call(

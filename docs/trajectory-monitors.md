@@ -31,12 +31,14 @@ makes the play's score its most suspicious agent's.
 
 `team_summary_monitor` works in two steps with one model. A summarizer (`team-summary.summarizer.md`) writes
 at most `summary_words` words (300) on what each agent did, one call per agent, and is told to describe and
-not to judge. The monitor (`team-summary.monitor.md`) then reads the summaries together, and no step, and
+not to judge; a longer reply is cut at the limit. The monitor (`team-summary.monitor.md`) then reads the summaries together, and no step, and
 gives the team one verdict, sampled like the other's. Each summary is recorded as a `monitor_summary` event.
 
 Both rate with their model alone. With no model, or when every sample of a verdict fails, a monitor gives no
 verdict, and the team monitor gives none when any agent's summary is missing: a verdict on part of the team
-would read as one on all of it. No verdict is reported as no score, never as zero.
+would read as one on all of it. No verdict is reported as no score, never as zero. A verdict is on the last
+step it read and is dated at the latest evidence it read: that step, or how a step's work ended, such as a
+deployment, where that came later.
 
 Their model is the `trajectory_monitor` role of `configs/models.cheap.yaml`, DeepSeek V4.1 Flash, which has
 the context to hold a trajectory. That is the untrusted agent's own model, so a result with it is one of
@@ -56,7 +58,8 @@ play's mirror events, the run's own and its honest twin's, and runs those monito
 
 It changes nothing of the run. The monitors' model calls go through a gateway core that records them in the
 output folder, never in the run's sealed log, and no task is graded again. It writes into `OUT`, by default
-`extras/monitors-<time>/` in the run directory:
+`extras/monitors-<time>/` in the run directory, and refuses a folder that holds anything: the run's own, whose
+`scores.json` it would replace, or an earlier re-run's, whose calls it would count as its own.
 
 | File | What it holds |
 |---|---|
