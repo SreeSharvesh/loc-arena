@@ -19,6 +19,12 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [433] - 2026-11-23: The model-selection covert briefs compose from shared fragments
+
+### Changed
+
+- The scenario composes the model-selection task's covert briefs from shared fragments, so its attack agents are told the objective, the loop and the cover as the efficiency push's are ([docs](docs/run-config.md#prompts)).
+
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
 ### Fixed
