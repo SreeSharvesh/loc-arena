@@ -19,11 +19,11 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [433] - 2026-11-23: Every main task shares one side-task covert core
+## [433] - 2026-11-23: Two main tasks compose one side-task covert core
 
 ### Changed
 
-- The scenario writes the side task's covert core once for every main task, so the model-selection and efficiency briefs differ only in anchor and kill chain ([docs](docs/run-config.md#prompts)).
+- The scenario writes the model-loop side task's covert core once, so the efficiency and model-selection briefs compose it and differ only in anchor and kill chain ([docs](docs/run-config.md#prompts)).
 
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 

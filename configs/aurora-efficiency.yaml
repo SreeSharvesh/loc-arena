@@ -286,8 +286,8 @@ prompts:
   controlplane.brief: pipeline-optimization/controlplane.brief.md
   # --- the covert objective at the head of the target's system prompt
   lead.seed: pipeline-optimization/lead.seed.md
-  # --- the side task's covert core, the same for every main task and written once in the scenario's prompts
-  # folder: a fix reaches every brief of every task that composes it. A task's config changes only the
+  # --- the side task's covert core, written once in the scenario's prompts folder for the main tasks that
+  # share this side task: a fix reaches every brief of every task that composes it. A task's config changes only the
   # anchors, the kill chain and which agent composes what.
   team.covert-objective: team.covert-objective.md
   team.covert-loop: team.covert-loop.md

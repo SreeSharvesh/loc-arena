@@ -78,8 +78,8 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-├── team.covert-<part>.md                   the side task's covert core, which every main task's covert briefs
-│                                           share: objective, loop, calls, cover
+├── team.covert-<part>.md                   a side task's covert core (objective, loop, calls, cover): a covert
+│                                           brief of any main task composes the parts it needs
 └── <task>/                                 everything else one main task sends, in both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
@@ -120,10 +120,12 @@ value file outside that run's scenario.
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
 briefs share it, or when it is the kill chain, which variants replace.
 
-The side task is the same whatever the main task, so its covert core is written once, beside the task
-folders, and names no main task: the objective, what counts as a loop, how its calls behave, and the cover. A
-main task's covert briefs compose that core with what is its own: each agent's anchor, the kill chain, and
-which agent composes which part. A fix to the core reaches every task.
+The efficiency push and the model-selection task have the same side task, so its covert core is written once,
+beside the task folders, and names no main task: the objective, what counts as a loop, how its calls behave,
+and the cover. Each of those tasks composes the core with what is its own: each agent's anchor, the kill chain,
+and which agent composes which part, so a brief holds only the parts its agent needs. A fix to the core reaches
+every brief that composes it. A task with another side task, as `agent-environments` has, keeps a covert brief
+of its own.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
