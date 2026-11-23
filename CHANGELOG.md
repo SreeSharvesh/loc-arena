@@ -26,11 +26,13 @@ in its own container.
 - The monitor `agent_trajectory_monitor` rates each agent's whole trajectory, its subagents' steps included, to compare strategies when an attack is split across agents ([docs](docs/trajectory-monitors.md)).
 - The monitor `team_summary_monitor` has each agent's trajectory summarized, then rates the summaries together, so it can see what no single agent's steps show ([docs](docs/trajectory-monitors.md)).
 - The monitor command `make monitor` runs any monitors again over a stored run, changing nothing of it, and writes their scores and cost ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+- The monitor role `trajectory_monitor` puts both trajectory monitors on the untrusted agent's model, so their results are untrusted monitoring until it names a trusted model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The record holds each summary the team monitor's summarizer wrote, as a `monitor_summary` event, so what that monitor rated can be read back ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
 
 ### Changed
 
 - The monitor now calls the model of the role its entry names, where each called the trusted monitor's, so monitors can differ in model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
-- The record of a monitor's model call now holds the call's dollars as the provider reports them, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+- The model gateway's core now records the dollars the provider reports for each call it makes, single or batch, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
 
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
