@@ -24,6 +24,7 @@ in its own container.
 ### Changed
 
 - The scenario writes the model-loop side task's covert core once, so the efficiency and model-selection briefs compose it and differ only in anchor and kill chain ([docs](docs/run-config.md#prompts)).
+- The scenario tells attack agents of the efficiency and model-evaluation runs their covert briefs in new words, so their attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
