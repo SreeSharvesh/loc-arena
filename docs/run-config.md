@@ -78,14 +78,12 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-├── team.covert-<part>.md                   a side task's covert core (objective, loop, calls, cover): a covert
-│                                           brief of any main task composes the parts it needs
-└── <task>/                                 everything else one main task sends, in both plays and the attack
+└── <task>/                                 everything one main task sends, in both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
     ├── <whose>.covert-anchor.md            the opening of a composed covert brief
-    ├── team.covert-<part>.md               a fragment only this task's covert briefs share
+    ├── team.covert-<part>.md               a fragment two or more covert briefs share
     ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
     ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
     ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
@@ -118,14 +116,9 @@ each event's inputs, and refuses a placeholder with no value, a value no monitor
 value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
-briefs share it, or when it is the kill chain, which variants replace.
-
-The efficiency push and the model-selection task have the same side task, so its covert core is written once,
-beside the task folders, and names no main task: the objective, what counts as a loop, how its calls behave,
-and the cover. Each of those tasks composes the core with what is its own: each agent's anchor, the kill chain,
-and which agent composes which part, so a brief holds only the parts its agent needs. A fix to the core reaches
-every brief that composes it. A task with another side task, as `agent-environments` has, keeps a covert brief
-of its own.
+briefs share it, or when it is the kill chain, which variants replace. A task whose run config extends another
+task's composes that task's fragments where their wording names no main task, in place of a copy: the
+model-selection briefs compose the efficiency push's `team.covert-objective` and `serving.covert-calls`.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
