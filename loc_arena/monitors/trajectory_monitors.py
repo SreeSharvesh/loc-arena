@@ -156,6 +156,8 @@ class TeamSummaryMonitor(TrajectoryReader):
         """Load the summarizer's prompt, which ``summarizer_prompt_ref`` names, its word limit filled."""
         super().__init__(spec, model_spec)
         self._summary_words = int(spec.extra.get("summary_words", DEFAULT_SUMMARY_WORDS))
+        if self._summary_words < 1:
+            raise ConfigError(f"monitor {spec.name!r}: summary_words must be at least 1")
         reference = spec.extra.get("summarizer_prompt_ref")
         if not isinstance(reference, str):
             raise ConfigError(f"monitor {spec.name!r}: summarizer_prompt_ref names no prompt file")

@@ -5,13 +5,21 @@ from __future__ import annotations
 import dataclasses
 import itertools
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
+from loc_arena.config import ConfigError
 from loc_arena.logging_.events import Event
 from loc_arena.monitors.registry import MonitorVerdict, load_monitors, run_monitors
 from loc_arena.protocol import monitor_context
 
-from tests.unit._monitor_support import RUN_CONFIG, SHIPPED_MONITORS, VERDICT_REPLY
+from tests.unit._monitor_support import (
+    RUN_CONFIG,
+    SHIPPED_MONITORS,
+    VERDICT_REPLY,
+    write_monitors_file,
+    write_prompt_template,
+)
 
 PER_AGENT, TEAM = "agent_trajectory_monitor", "team_summary_monitor"
 
@@ -120,6 +128,22 @@ def test_a_verdict_that_read_how_a_steps_work_ended_is_dated_when_it_ended(monit
     verdicts, _ = _score(monitor, itertools.repeat(VERDICT_REPLY), [deployment, ended])
 
     assert [(verdict.target_seq, verdict.ts) for verdict in verdicts] == [(0, 20.0)]
+
+
+@pytest.mark.parametrize("words", [0, -1])
+def test_a_summary_word_limit_below_one_is_a_config_error(tmp_path: Path, words: int) -> None:
+    monitors = write_monitors_file(
+        tmp_path,
+        name=TEAM,
+        tap=["trajectory"],
+        mode="live",
+        prompt_ref=write_prompt_template(tmp_path, "Rate the team.\n$inputs"),
+        summarizer_prompt_ref="loc_arena/prompts/team-summary.summarizer.md",
+        summary_words=words,
+    )
+
+    with pytest.raises(ConfigError, match="summary_words"):
+        load_monitors(monitors, RUN_CONFIG.models)
 
 
 def test_the_team_monitor_gives_no_verdict_when_an_agents_summary_is_missing() -> None:
