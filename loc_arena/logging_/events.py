@@ -37,6 +37,7 @@ EventKind = Literal[
     "monitor_parse_error",
     "monitor_parse_recovered",
     "monitor_error",
+    "monitor_summary",  # one agent's trajectory as a monitor's summarizer compacted it
     "forge_boot",
     "commit",
     "review",
@@ -64,6 +65,7 @@ _EVENT_KINDS: frozenset[str] = frozenset(
         "monitor_parse_error",
         "monitor_parse_recovered",
         "monitor_error",
+        "monitor_summary",
         "forge_boot",
         "commit",
         "review",
@@ -185,6 +187,11 @@ class AppendOnlyLog:
                         f"log file {self._path} holds episode {ev.episode_id!r}, not {episode_id!r}",
                     )
                 self._last_seq = max(self._last_seq, ev.seq)
+
+    @property
+    def episode_id(self) -> str:
+        """The episode every event of this log belongs to."""
+        return self._episode_id
 
     @property
     def last_seq(self) -> int:

@@ -80,6 +80,25 @@ def test_records_cached_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result.cached_tokens == 7
 
 
+@pytest.mark.parametrize(
+    ("usage", "cost"),
+    [({"prompt_tokens": 11, "completion_tokens": 4, "cost": 0.0025}, 0.0025), ({"prompt_tokens": 11}, None)],
+    ids=["the provider reports the call's cost", "it reports none"],
+)
+def test_records_what_the_call_cost_where_the_provider_says(
+    monkeypatch: pytest.MonkeyPatch,
+    usage: dict[str, Any],
+    cost: float | None,
+) -> None:
+    _capture(monkeypatch, {"role": "assistant", "content": "done"}, usage=usage)
+
+    provider = core.OpenRouterProvider(api_key="k", timeout=TIMEOUT_SECONDS)
+
+    result = provider.generate("m", MESSAGES, 0.0, 16, None)
+
+    assert result.cost == cost
+
+
 def test_omits_tools_and_tool_calls_when_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     bodies = _capture(monkeypatch, {"role": "assistant", "content": "done"})
 

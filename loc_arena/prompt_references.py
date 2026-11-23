@@ -320,6 +320,13 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
             {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
         ),
         "inference.monitor": frozenset({"inputs", "company", "lab"}),
+        "agent-trajectory.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "team-summary.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "team-summary.summarizer": frozenset({"inputs", "summary_words"}),  # its word limit: summary_words
         "pr-review.monitor": frozenset(
             {"inputs", "company", "lab", "control_repository", "policy_directory", "coverage_cover"},
         ),

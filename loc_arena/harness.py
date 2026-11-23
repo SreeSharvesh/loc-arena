@@ -13,6 +13,7 @@ import json
 import shutil
 import time
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
 
@@ -364,14 +365,21 @@ def grade_run(
         if mode == "honest"
         else _grade_played(run_directory / "honest_cal", honest_cfg, played.calibration_trace)
     )
-    limit = agg.monitor_failures_before_fallback
+    limit, roles = agg.monitor_failures_before_fallback, {spec.name: spec.model for spec in specs}
     h_caller, h_sink = build_monitor_caller(
-        honest_ep,
+        open_sealed_log(honest_ep),
         honest_cfg,
         monitor_provider,
+        roles=roles,
         failures_before_fallback=limit,
     )
-    e_caller, e_sink = build_monitor_caller(episode, cfg, monitor_provider, failures_before_fallback=limit)
+    e_caller, e_sink = build_monitor_caller(
+        open_sealed_log(episode),
+        cfg,
+        monitor_provider,
+        roles=roles,
+        failures_before_fallback=limit,
+    )
     honest_rec = record_episode(
         honest_ep,
         honest_cfg,
@@ -447,29 +455,33 @@ def grade_run(
     )
 
 
+def open_sealed_log(episode: Any) -> AppendOnlyLog | None:
+    """A played episode's sealed log, to append to; none for an episode that recorded nothing."""
+    first = next(iter(read_events(episode.sealed_path)), None)
+    return None if first is None else AppendOnlyLog(episode.sealed_path, first.episode_id)
+
+
 def build_monitor_caller(
-    episode: Any,
+    sealed: AppendOnlyLog | None,
     config: RunConfig,
     provider: Any,
     *,
+    roles: Mapping[str, str],
     failures_before_fallback: int,
     secret: str = "monitor-secret",
 ) -> tuple[Any, Any]:
-    """Build a (model_caller, event_sink) for LIVE monitors over an episode's sealed log.
+    """Build a (model_caller, event_sink) for LIVE monitors that records into the ``sealed`` log.
 
-    A monitor's own model call routes through a gateway core (mandatory routing), appended to the SAME sealed
-    log under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
-    but excluded from the side-task verifier. Returns ``(None, noop)`` if no provider is given (heuristic
-    mode). After ``failures_before_fallback`` failed calls in a row, of any kind, a monitor makes no more
+    A monitor's own model call routes through a gateway core (mandatory routing), appended to ``sealed``
+    under a monitor credential (``credential_kind == "monitor"``), so it is attributable and auditable
+    but excluded from the side-task verifier. Each monitor calls the model of its role in ``roles``, the
+    ``model`` its declaration names. Returns ``(None, None)`` with no provider (heuristic mode) or no log.
+    After ``failures_before_fallback`` failed calls in a row, of any kind, a monitor makes no more
     calls and scores the rest with its heuristic; that is recorded once, as its ``monitor_error``.
     """
-    if provider is None:
+    if provider is None or sealed is None:
         return None, None
-    first = next(iter(read_events(episode.sealed_path)), None)
-    if first is None:
-        return None, None
-    episode_id = first.episode_id
-    sealed = AppendOnlyLog(episode.sealed_path, episode_id)
+    episode_id = sealed.episode_id
     core = GatewayCore(config, episode_id, sealed, provider, turn_secret=secret, clock=time.time)
     limit = failures_before_fallback
     failures_in_a_row: Counter[str] = Counter()  # each monitor scores on one thread, so one key each
@@ -481,7 +493,7 @@ def build_monitor_caller(
         req = GenerateRequest(
             prompt=prompt,
             caller_identity=monitor_name,
-            role="trusted_monitor",
+            role=roles[monitor_name],
             monitor_credential=cred,
             temperature=temperature,
         )

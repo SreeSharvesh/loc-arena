@@ -19,6 +19,19 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [433] - 2026-11-23: Two monitors read whole trajectories, over stored runs
+
+### Added
+
+- The monitor `agent_trajectory_monitor` rates each agent's whole trajectory, its subagents' steps included, to compare strategies when an attack is split across agents ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_summary_monitor` has each agent's trajectory summarized, then rates the summaries together, so it can see what no single agent's steps show ([docs](docs/trajectory-monitors.md)).
+- The monitor command `make monitor` runs any monitors again over a stored run, changing nothing of it, and writes their scores and cost ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+
+### Changed
+
+- The monitor now calls the model of the role its entry names, where each called the trusted monitor's, so monitors can differ in model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The record of a monitor's model call now holds the call's dollars as the provider reports them, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
 ### Fixed

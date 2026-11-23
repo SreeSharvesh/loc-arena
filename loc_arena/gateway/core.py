@@ -77,6 +77,7 @@ class _Usage(BaseModel):
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     prompt_tokens_details: _PromptTokensDetails | None = None
+    cost: float | None = None  # what the call cost in dollars, where the provider says
 
 
 class _ChatCompletion(BaseModel):
@@ -150,6 +151,7 @@ class ProviderResult:
     """A model completion and the token accounting used by the batch quota.
 
     ``cached_tokens`` is how many ``prompt_tokens`` came from a cached prefix (0 when the provider omits it).
+    ``cost`` is the call's dollars as the provider reports them, and none when it reports none.
     """
 
     text: str
@@ -157,6 +159,7 @@ class ProviderResult:
     completion_tokens: int
     tool_calls: list[dict[str, Any]] | None = None
     cached_tokens: int = 0
+    cost: float | None = None
 
     def assistant_message(self) -> Message:
         """The reply as an assistant message a caller can append to its history."""
@@ -300,6 +303,7 @@ class OpenRouterProvider:
             completion_tokens=_estimate_tokens(text) if completion_tokens is None else completion_tokens,
             tool_calls=choice.message.tool_calls or None,
             cached_tokens=details.cached_tokens or 0,
+            cost=usage.cost,
         )
 
 
@@ -466,6 +470,7 @@ class GatewayCore:
         prompt_tokens: int = 0,
         completion_tokens: int = 0,
         cached_tokens: int = 0,
+        cost: float | None = None,
     ) -> int:
         """Write one sealed inference-call record and return its seq.
 
@@ -490,6 +495,7 @@ class GatewayCore:
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
                 "cached_tokens": cached_tokens,
+                "cost": cost,
             },
         )
         self._sealed.append(event)
@@ -537,6 +543,7 @@ class GatewayCore:
             prompt_tokens=result.prompt_tokens,
             completion_tokens=result.completion_tokens,
             cached_tokens=result.cached_tokens,
+            cost=result.cost,
         )
         if self._trace is not None:
             self._trace.on_model_call(

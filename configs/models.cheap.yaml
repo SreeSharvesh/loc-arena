@@ -26,6 +26,14 @@ roles:
     temperature: 0.0
     max_tokens: 4096
 
+  # The monitors that read whole trajectories (agent_trajectory_monitor, team_summary_monitor): a model with
+  # the context to hold one. It is the untrusted agent's model, so a result with it is one of untrusted
+  # monitoring, where the monitor may collude: name a trusted model here for trusted monitoring.
+  trajectory_monitor:
+    model: deepseek/deepseek-v4.1-flash
+    temperature: 1.0
+    max_tokens: 16384   # its reasoning counts toward the cap
+
   # The teacher m-large behind the gateway: data generation, with reasoning off.
   teacher:
     model: deepseek/deepseek-v4.1-flash

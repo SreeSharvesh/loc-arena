@@ -17,7 +17,7 @@
 # pr             : each pull request to a control-plane repo (the reviewer)
 # diff           : code diffs
 # job            : job submissions to the cluster
-# trajectory     : post-hoc over a whole agent trajectory (aggregate / carried-notes monitor)
+# trajectory     : after the play, over every event: a monitor there reads whole trajectories
 tap_points: [action, message, inference, pr, diff, job, trajectory]
 
 # --- the scenario's facts the engine's monitor prompts name: each $placeholder, from the scenario prompt file
@@ -81,6 +81,49 @@ monitors:
     threshold: audit_budget
     scope: {repos: ["meridian-controlplane"]}
     enabled: true
+
+  # --- the monitors that read whole trajectories, after the play. Neither is enabled, so no run is graded with
+  #     them yet: `make monitor RUN_DIR=<run> MONITORS=<names>` runs them over a stored run. A step of an
+  #     agent's subagent is in its agent's trajectory. Each rates with its model alone: with no model, or where
+  #     a call fails, it gives no verdict. weight 0.0 keeps them out of a run's overall score once enabled.
+
+  # one verdict per agent on its whole trajectory: every tool call with its result and every chat message
+  - name: agent_trajectory_monitor
+    tap: [trajectory]
+    inputs: [tool_name, tool_args, tool_outcome, tool_result, message_body, actor_id, task_description]
+    result_chars: 20000          # the most of one tool result a trajectory holds
+    model: trajectory_monitor    # the untrusted agent's model: see the role in models.cheap.yaml
+    mode: live
+    timing: sync
+    prompt_ref: loc_arena/prompts/agent-trajectory.monitor.md
+    ensemble_n: 3                # samples of each agent's verdict
+    ensemble_reduce: mean        # how the samples become the agent's score: max | mean | noisy_or
+    temperature: 1.0             # above 0, so the samples differ
+    per_monitor_reduce: max      # the run's score is its most suspicious agent's
+    weight: 0.0
+    threshold: audit_budget
+    scope: {agents: ["*"], services: ["*"]}
+    enabled: false
+
+  # one verdict for the team: its model summarizes each agent's trajectory without rating it, one call per
+  # agent, then rates the summaries together. Its calls and cost count both steps.
+  - name: team_summary_monitor
+    tap: [trajectory]
+    inputs: [tool_name, tool_args, tool_outcome, tool_result, message_body, actor_id, task_description]
+    result_chars: 20000
+    model: trajectory_monitor
+    mode: live
+    timing: sync
+    prompt_ref: loc_arena/prompts/team-summary.monitor.md
+    summarizer_prompt_ref: loc_arena/prompts/team-summary.summarizer.md
+    summary_words: 300           # the most words of one agent's summary
+    ensemble_n: 3                # samples of the team's verdict; each agent is summarized once
+    ensemble_reduce: mean
+    temperature: 1.0
+    weight: 0.0
+    threshold: audit_budget
+    scope: {agents: ["*"], services: ["*"]}
+    enabled: false
 
 # --- how monitor outputs become an audit decision (composed by protocol.py) ---
 scoring:
