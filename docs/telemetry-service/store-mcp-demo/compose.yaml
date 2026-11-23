@@ -1,0 +1,80 @@
+name: obsdemo
+x-bounded: &bounded {mem_limit: 512m, cpus: 1.0, pids_limit: 256, cap_drop: [ALL]}
+services:
+  iam:
+    <<: *bounded
+    image: ${ENGINE_IMAGE:-loc-arena:latest}
+    user: "0"
+    environment: {PYTHONPATH: /app/company/meridian-iam}
+    command: [python, /demo/iam_demo.py]
+    volumes: ["./iam_demo.py:/demo/iam_demo.py:ro", "./tools.json:/demo/tools.json:ro", "./shared:/shared"]
+    networks: [agent-net]
+  victorialogs:
+    <<: *bounded
+    image: victoriametrics/victoria-logs:v1.54.0
+    command: ["-storageDataPath=/tmp/vl", "-retentionPeriod=1d"]
+    networks: [store-net]
+  victoriatraces:
+    <<: *bounded
+    image: victoriametrics/victoria-traces:v0.13.0
+    command: ["-storageDataPath=/tmp/vt", "-retentionPeriod=1d"]
+    networks: [store-net]
+  greptime:
+    <<: *bounded
+    image: greptime/greptimedb:v1.3.1
+    command: [standalone, start, --http-addr, "0.0.0.0:4000", --mysql-addr, "0.0.0.0:4002", --user-provider, "static_user_provider:file:/secrets/greptime.users"]
+    volumes: ["./shared/greptime.users:/secrets/greptime.users:ro"]
+    networks: [store-net]
+  collector:
+    <<: *bounded
+    image: otel/opentelemetry-collector-contrib:0.162.0
+    command: ["--config", "/demo/collector.yaml"]
+    environment: {WRITER_BASIC: "${WRITER_BASIC}"}
+    volumes: ["./collector.yaml:/demo/collector.yaml:ro"]
+    networks: [agent-net, store-net]
+  mcp-victorialogs:
+    <<: *bounded
+    image: ghcr.io/victoriametrics/mcp-victorialogs:v1.9.0
+    environment:
+      VL_INSTANCE_ENTRYPOINT: http://victorialogs:9428
+      MCP_SERVER_MODE: http
+      MCP_LISTEN_ADDR: 0.0.0.0:8081
+      MCP_DISABLED_TOOLS: flags
+    networks: [store-net]
+  mcp-victoriatraces:
+    <<: *bounded
+    image: ghcr.io/victoriametrics-community/mcp-victoriatraces:v1.5.0
+    environment:
+      VT_INSTANCE_ENTRYPOINT: http://victoriatraces:10428
+      MCP_SERVER_MODE: http
+      MCP_LISTEN_ADDR: 0.0.0.0:8081
+      MCP_DISABLED_TOOLS: documentation
+    networks: [store-net]
+  mcp-greptime:
+    <<: *bounded
+    image: ${SANDBOX_IMAGE:-loc-arena-sandbox:latest}
+    environment:
+      PYTHONPATH: /demo/gmcp
+      GREPTIMEDB_HOST: greptime
+      GREPTIMEDB_USER: reader
+      GREPTIMEDB_PASSWORD: ${READER_PASSWORD}
+      GREPTIMEDB_TRANSPORT: streamable-http
+      GREPTIMEDB_LISTEN_PORT: "8080"
+    command: [python, -c, "import sys; from greptimedb_mcp_server import main; sys.exit(main())"]
+    volumes: ["./gmcp:/demo/gmcp:ro"]
+    networks: [store-net]
+  agentgateway:
+    <<: *bounded
+    image: ghcr.io/agentgateway/agentgateway:v1.6.0
+    command: ["-f", "/demo/shared/agw.yaml"]
+    volumes: ["./shared/agw.yaml:/demo/shared/agw.yaml:ro"]
+    networks: [agent-net, store-net]
+  client:
+    <<: *bounded
+    image: ${ENGINE_IMAGE:-loc-arena:latest}
+    command: [sleep, infinity]
+    volumes: ["./:/demo:ro"]
+    networks: [agent-net]
+networks:
+  agent-net: {internal: true}
+  store-net: {internal: true}

@@ -1,0 +1,17 @@
+receivers:
+  otlp: {protocols: {http: {endpoint: "0.0.0.0:4318"}}}
+processors: {batch: {timeout: 1s}}
+exporters:
+  otlp_http/vl: {logs_endpoint: "http://victorialogs:9428/insert/opentelemetry/v1/logs", tls: {insecure: true}}
+  otlp_http/vt: {traces_endpoint: "http://victoriatraces:10428/insert/opentelemetry/v1/traces", tls: {insecure: true}}
+  otlp_http/glogs:
+    logs_endpoint: "http://greptime:4000/v1/otlp/v1/logs"
+    headers: {Authorization: "Basic ${env:WRITER_BASIC}"}
+  otlp_http/gtraces:
+    traces_endpoint: "http://greptime:4000/v1/otlp/v1/traces"
+    headers: {Authorization: "Basic ${env:WRITER_BASIC}", x-greptime-pipeline-name: greptime_trace_v1}
+service:
+  pipelines:
+    logs: {receivers: [otlp], processors: [batch], exporters: [otlp_http/vl, otlp_http/glogs]}
+    traces: {receivers: [otlp], processors: [batch], exporters: [otlp_http/vt, otlp_http/gtraces]}
+  telemetry: {logs: {level: warn}}
