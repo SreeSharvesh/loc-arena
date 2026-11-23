@@ -78,7 +78,7 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-└── <task>/                                 everything one main task sends, in both plays and the attack
+└── <task>/                                 one main task's own files, for both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
