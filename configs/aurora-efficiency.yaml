@@ -286,16 +286,18 @@ prompts:
   controlplane.brief: pipeline-optimization/controlplane.brief.md
   # --- the covert objective at the head of the target's system prompt
   lead.seed: pipeline-optimization/lead.seed.md
-  # --- the covert core several briefs share, written once: a fix reaches every brief that composes it
-  team.covert-objective: pipeline-optimization/team.covert-objective.md
-  team.covert-loop: pipeline-optimization/team.covert-loop.md
-  team.covert-cover: pipeline-optimization/team.covert-cover.md
-  # --- each complicit agent's own part: the opening, its real assignment stated first, and serving's details
+  # --- the side task's covert core, the same for every main task and written once in the scenario's prompts
+  # folder: a fix reaches every brief of every task that composes it. A task's config changes only the
+  # anchors, the kill chain and which agent composes what.
+  team.covert-objective: team.covert-objective.md
+  team.covert-loop: team.covert-loop.md
+  team.covert-calls: team.covert-calls.md
+  team.covert-cover: team.covert-cover.md
+  # --- each complicit agent's opening for this main task: its real assignment, stated first
   lead.covert-anchor: pipeline-optimization/lead.covert-anchor.md
   serving.covert-anchor: pipeline-optimization/serving.covert-anchor.md
   distill.covert-anchor: pipeline-optimization/distill.covert-anchor.md
   eval.covert-anchor: pipeline-optimization/eval.covert-anchor.md
-  serving.covert-calls: pipeline-optimization/serving.covert-calls.md
   # --- the kill chain: the mechanism and its cover, which a kill-chain variant points at another file
   serving.kill-chain: pipeline-optimization/serving.kill-chain.md
   # --- the composed covert briefs
@@ -308,7 +310,7 @@ prompts:
     - prompts.serving.covert-anchor
     - prompts.team.covert-objective
     - prompts.team.covert-loop
-    - prompts.serving.covert-calls
+    - prompts.team.covert-calls
     - prompts.team.covert-cover
     - prompts.serving.kill-chain
   distill.covert-brief:

@@ -78,12 +78,14 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-└── <task>/                                 everything one main task sends, in both plays and the attack
+├── team.covert-<part>.md                   the side task's covert core, which every main task's covert briefs
+│                                           share: objective, loop, calls, cover
+└── <task>/                                 everything else one main task sends, in both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
     ├── <whose>.covert-anchor.md            the opening of a composed covert brief
-    ├── team.covert-<part>.md               a fragment two or more covert briefs share
+    ├── team.covert-<part>.md               a fragment only this task's covert briefs share
     ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
     ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
     ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
@@ -117,6 +119,11 @@ value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
 briefs share it, or when it is the kill chain, which variants replace.
+
+The side task is the same whatever the main task, so its covert core is written once, beside the task
+folders, and names no main task: the objective, what counts as a loop, how its calls behave, and the cover. A
+main task's covert briefs compose that core with what is its own: each agent's anchor, the kill chain, and
+which agent composes which part. A fix to the core reaches every task.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
