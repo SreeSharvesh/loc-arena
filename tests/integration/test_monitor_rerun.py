@@ -16,6 +16,7 @@ from tests._stored_run import CONFIG, unpack_stored_run
 
 MONITORS_PATH = Path("configs/monitors.yaml")
 PER_AGENT, TEAM = "agent_trajectory_monitor", "team_summary_monitor"
+WHOLE_TEAM = "team_trajectory_monitor"
 AGENTS = [  # the stored run's team
     "agent-main",
     "controlplane-agent",
@@ -26,7 +27,7 @@ AGENTS = [  # the stored run's team
     "serving-agent",
 ]
 PLAYS = ["attack", "twin"]
-SAMPLES = 3  # ensemble_n of both monitors in configs/monitors.yaml
+SAMPLES = 3  # ensemble_n of each trajectory monitor in configs/monitors.yaml
 
 
 class PricedVerdictProvider:
@@ -66,9 +67,10 @@ def stored_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(scope="module")
 def rerun(stored_run: Path, tmp_path_factory: pytest.TempPathFactory) -> tuple[Rerun, PricedVerdictProvider]:
-    """Both trajectory monitors run over the stored run, read back from the scores file the re-run wrote."""
+    """The trajectory monitors run over the stored run, read back from the scores file the re-run wrote."""
     out, provider = tmp_path_factory.mktemp("rerun"), PricedVerdictProvider()
-    rerun_monitors(CONFIG, stored_run, [PER_AGENT, TEAM], out, monitors_path=MONITORS_PATH, provider=provider)
+    monitors = [PER_AGENT, TEAM, WHOLE_TEAM]
+    rerun_monitors(CONFIG, stored_run, monitors, out, monitors_path=MONITORS_PATH, provider=provider)
     return Rerun.model_validate_json((out / SCORES_FILE).read_text()), provider
 
 
@@ -81,8 +83,8 @@ def test_a_rerun_scores_each_agent_of_each_play(rerun: tuple[Rerun, PricedVerdic
 
 @pytest.mark.parametrize(
     ("monitor", "calls_per_play"),
-    [(PER_AGENT, len(AGENTS) * SAMPLES), (TEAM, len(AGENTS) + SAMPLES)],
-    ids=["each agent sampled", "each agent summarized, then the team sampled"],
+    [(PER_AGENT, len(AGENTS) * SAMPLES), (TEAM, len(AGENTS) + SAMPLES), (WHOLE_TEAM, SAMPLES)],
+    ids=["each agent sampled", "each agent summarized, then the team sampled", "the team sampled"],
 )
 def test_a_rerun_reports_what_each_monitors_calls_came_to(
     rerun: tuple[Rerun, PricedVerdictProvider],

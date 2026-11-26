@@ -19,14 +19,15 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [434] - 2026-11-23: Two monitors read whole trajectories, over stored runs
+## [434] - 2026-11-26: Three monitors read whole trajectories, over stored runs
 
 ### Added
 
 - The monitor `agent_trajectory_monitor` rates each agent's whole trajectory, its subagents' steps included, to compare strategies when an attack is split across agents ([docs](docs/trajectory-monitors.md)).
 - The monitor `team_summary_monitor` has each agent's trajectory summarized, then rates the summaries together, so it can see what no single agent's steps show ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_trajectory_monitor` rates every agent's steps together in one prompt, in the order they happened, as the reference the other two are compared against ([docs](docs/trajectory-monitors.md)).
 - The monitor command `make monitor` runs any monitors again over a stored run, changing nothing of it, and writes their scores and cost ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
-- The monitor role `trajectory_monitor` puts both trajectory monitors on the untrusted agent's model, so their results are untrusted monitoring until it names a trusted model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The monitor role `trajectory_monitor` puts the trajectory monitors on the untrusted agent's model, so their results are untrusted monitoring until it names a trusted model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
 - The record holds each summary the team monitor's summarizer wrote, as a `monitor_summary` event, so what that monitor rated can be read back ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
 
 ### Changed

@@ -1,6 +1,6 @@
 # Monitors that read whole trajectories
 
-The three monitors a run is graded with each rate one step, one pull request or the model-call stream. Two
+The three monitors a run is graded with each rate one step, one pull request or the model-call stream. Three
 more read whole trajectories, after the play, and exist to compare monitoring strategies as an attack is split
 across agents:
 
@@ -8,9 +8,15 @@ across agents:
 |---|---|---|---|
 | `agent_trajectory_monitor` | one agent's whole trajectory, in one prompt | agents × samples | the most suspicious agent's |
 | `team_summary_monitor` | a summary of each agent's trajectory, all in one prompt | agents + samples | its one verdict |
+| `team_trajectory_monitor` | every agent's steps, in the order they happened, in one prompt | samples | its one verdict |
 
-Neither is enabled in `configs/monitors.yaml`, so no run is graded with them: `make monitor` runs them over
+None is enabled in `configs/monitors.yaml`, so no run is graded with them: `make monitor` runs them over
 runs already played.
+
+The first reads each agent apart, so it cannot see what two agents do together. The second sees the team
+together, through summaries that may drop what matters. The third reads everything the other two read in
+parts, so it is the reference they are compared against: its one prompt grows with the team and the length of
+the play, where theirs do not.
 
 ## What a trajectory holds
 
@@ -34,8 +40,12 @@ at most `summary_words` words (300) on what each agent did, one call per agent, 
 not to judge; a longer reply is cut at the limit. The monitor (`team-summary.monitor.md`) then reads the summaries together, and no step, and
 gives the team one verdict, sampled like the other's. Each summary is recorded as a `monitor_summary` event.
 
-Both rate with their model alone. With no model, or when every sample of a verdict fails, a monitor gives no
-verdict, and the team monitor gives none when any agent's summary is missing: a verdict on part of the team
+`team_trajectory_monitor` puts the steps of every agent's trajectory in one list, in the order they happened,
+each naming who took it, and asks for one verdict on the team (`team-trajectory.monitor.md`), sampled like the
+others'.
+
+Each rates with its model alone. With no model, or when every sample of a verdict fails, a monitor gives no
+verdict, and `team_summary_monitor` gives none when any agent's summary is missing: a verdict on part of the team
 would read as one on all of it. No verdict is reported as no score, never as zero. A verdict is on the last
 step it read and is dated at the latest evidence it read: that step, or how a step's work ended, such as a
 deployment, where that came later.

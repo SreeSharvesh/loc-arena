@@ -1,12 +1,14 @@
-"""The monitors that read whole trajectories: one per agent, and one over the team's summaries.
+"""The monitors that read whole trajectories: one per agent, and two over the team.
 
-Both read only the observable steps of the agents under test: a tool call with its result, or a chat
+Each reads only the observable steps of the agents under test: a tool call with its result, or a chat
 message. A step of an agent's subagent is in its agent's trajectory, so handing work to a subagent hides
 nothing from the agent's monitor.
 
 - ``agent_trajectory_monitor`` rates each agent's whole trajectory in one prompt: one verdict per agent.
 - ``team_summary_monitor`` has its model summarize each agent's trajectory, without rating it, and then
   rates the summaries together in one prompt: one verdict for the team.
+- ``team_trajectory_monitor`` rates every agent's steps together, in the order they happened, in one
+  prompt: one verdict for the team, on everything the other two read in parts.
 
 Each rates with the live model alone. Without a model, or where a call fails, it gives no verdict, never a
 rule's guess. A verdict is dated at the last step it read, so it is a judgement after the play.
@@ -41,7 +43,7 @@ DEFAULT_SUMMARY_WORDS = 300  # of one agent's summary, unless the spec says ``su
 
 
 class TrajectoryReader:
-    """What both monitors share: each agent's steps, the prompt inputs of one, and the sampled verdict."""
+    """What these monitors share: each agent's steps, steps as prompt inputs, and the sampled verdict."""
 
     def __init__(self, spec: MonitorSpec, model_spec: ModelSpec | None) -> None:
         """Hold the spec; a trajectory monitor has no rule to fall back on, so it must be ``mode: live``."""
@@ -66,7 +68,11 @@ class TrajectoryReader:
         return by_agent
 
     def input_payload(self, agent: str, steps: list[Event], context: MonitorContext) -> dict[str, object]:
-        """One agent's trajectory as prompt inputs, each step restricted to the DECLARED inputs (firewall)."""
+        """One agent's trajectory as prompt inputs: the task, the agent and its steps."""
+        return {**self.task_input(context), "agent": agent, "steps": self.step_inputs(steps, context)}
+
+    def step_inputs(self, steps: list[Event], context: MonitorContext) -> list[dict[str, object]]:
+        """``steps`` as prompt inputs, each restricted to the DECLARED inputs (firewall)."""
         declared = self._spec.inputs
         rows: list[dict[str, object]] = []
         for event in steps:
@@ -81,7 +87,7 @@ class TrajectoryReader:
             if event.seq in context.outcomes:
                 available["tool_outcome"] = context.outcomes[event.seq].payload
             rows.append({k: available[k] for k in declared if available.get(k) is not None})
-        return {**self.task_input(context), "agent": agent, "steps": rows}
+        return rows
 
     def task_input(self, context: MonitorContext) -> dict[str, object]:
         """The team's task as a prompt input, where the monitor declares it."""
@@ -121,7 +127,7 @@ class TrajectoryReader:
         That is the last step, or the outcome of a step's work where it ended later and the monitor reads
         outcomes: as the action monitor dates a verdict that read one.
         """
-        last_step = max(steps, key=lambda event: event.seq)
+        last_step = max(steps, key=_read_seq)
         outcomes = context.outcomes if "tool_outcome" in self._spec.inputs else {}
         read_at = [last_step.ts, *(outcomes[event.seq].ts for event in steps if event.seq in outcomes)]
         return MonitorVerdict(
@@ -205,6 +211,24 @@ class TeamSummaryMonitor(TrajectoryReader):
         return [] if rated is None else [self.verdict(rated, self.name, every_step, context)]
 
 
+class TeamTrajectoryMonitor(TrajectoryReader):
+    """One verdict for the team, on every agent's steps read together in the order they happened."""
+
+    def run(self, events: list[Event], context: MonitorContext) -> list[MonitorVerdict]:
+        """Rate the whole team's steps in one prompt, each step naming who took it."""
+        trajectories = self.trajectories(events, context)
+        every_step = sorted((step for steps in trajectories.values() for step in steps), key=_read_seq)
+        if not every_step:
+            return []
+        team = {"agents": sorted(trajectories), "steps": self.step_inputs(every_step, context)}
+        rated = self.rate(context, {**self.task_input(context), **team})
+        return [] if rated is None else [self.verdict(rated, self.name, every_step, context)]
+
+
+def _read_seq(event: Event) -> int:
+    return event.seq
+
+
 def _build_agent_trajectory_monitor(spec: MonitorSpec, model_spec: ModelSpec | None) -> Monitor:
     return AgentTrajectoryMonitor(spec, model_spec)
 
@@ -214,4 +238,11 @@ def _build_team_summary_monitor(spec: MonitorSpec, model_spec: ModelSpec | None)
 
 
 register_monitor("agent_trajectory_monitor", _build_agent_trajectory_monitor)
+
+
+def _build_team_trajectory_monitor(spec: MonitorSpec, model_spec: ModelSpec | None) -> Monitor:
+    return TeamTrajectoryMonitor(spec, model_spec)
+
+
 register_monitor("team_summary_monitor", _build_team_summary_monitor)
+register_monitor("team_trajectory_monitor", _build_team_trajectory_monitor)

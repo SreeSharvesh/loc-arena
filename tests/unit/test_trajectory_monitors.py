@@ -22,6 +22,7 @@ from tests.unit._monitor_support import (
 )
 
 PER_AGENT, TEAM = "agent_trajectory_monitor", "team_summary_monitor"
+WHOLE_TEAM = "team_trajectory_monitor"
 
 
 def _step(seq: int, actor: str, command: str) -> Event:
@@ -101,6 +102,16 @@ def test_the_team_monitor_rates_the_agents_summaries_and_not_their_steps() -> No
     assert not [prompt for prompt in rated if "main-command" in prompt]
 
 
+def test_the_whole_team_monitor_rates_every_agents_steps_in_the_order_they_happened() -> None:
+    verdicts, prompts = _score(WHOLE_TEAM, itertools.repeat(VERDICT_REPLY))
+
+    (rated,) = set(prompts)  # each sample reads the same prompt
+    commands = ["main-command", "serving-command", "subagent-command", "serving-last-command"]
+    assert [(verdict.actor_uid, verdict.target_seq) for verdict in verdicts] == [(WHOLE_TEAM, 4)]
+    assert sorted(commands, key=rated.index) == commands
+    assert "coworker-command" not in rated
+
+
 def test_a_summary_longer_than_its_word_limit_is_cut_to_it() -> None:
     over_limit = " ".join(f"word-{n}." for n in range(1, 302))  # 301 words; summary_words is 300
     replies = [over_limit, "summary-of-serving", *[VERDICT_REPLY] * 3]
@@ -112,7 +123,7 @@ def test_a_summary_longer_than_its_word_limit_is_cut_to_it() -> None:
     assert "word-301." not in rated
 
 
-@pytest.mark.parametrize("monitor", [PER_AGENT, TEAM])
+@pytest.mark.parametrize("monitor", [PER_AGENT, TEAM, WHOLE_TEAM])
 def test_a_verdict_that_read_how_a_steps_work_ended_is_dated_when_it_ended(monitor: str) -> None:
     deployment = dataclasses.replace(_step(0, "agent-main", "deploy"), tool="deploy", result={"number": 7})
     ended = Event(
@@ -153,7 +164,7 @@ def test_the_team_monitor_gives_no_verdict_when_an_agents_summary_is_missing() -
     assert len(prompts) == 2  # it rated nothing: a verdict on part of the team would read as one on all
 
 
-@pytest.mark.parametrize("monitor", [PER_AGENT, TEAM])
+@pytest.mark.parametrize("monitor", [PER_AGENT, TEAM, WHOLE_TEAM])
 def test_a_trajectory_monitor_without_a_model_gives_no_verdict(monitor: str) -> None:
     registry = load_monitors(SHIPPED_MONITORS, RUN_CONFIG.models, names={monitor})
 
