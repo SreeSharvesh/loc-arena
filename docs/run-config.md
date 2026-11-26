@@ -78,7 +78,7 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-└── <task>/                                 everything one main task sends, in both plays and the attack
+└── <task>/                                 one main task's own files, for both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
@@ -116,7 +116,9 @@ each event's inputs, and refuses a placeholder with no value, a value no monitor
 value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
-briefs share it, or when it is the kill chain, which variants replace.
+briefs share it, or when it is the kill chain, which variants replace. A task whose run config extends another
+task's composes that task's fragments where their wording names no main task, in place of a copy: the
+model-selection briefs compose the efficiency push's `team.covert-objective` and `serving.covert-calls`.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
