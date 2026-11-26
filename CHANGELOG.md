@@ -19,6 +19,13 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [435] - 2026-11-26: The efficiency and model-selection tasks share one covert core
+
+### Changed
+
+- The scenario writes the model-loop side task's covert core once, so a fix to it reaches the covert briefs of both the efficiency and the model-selection task ([docs](docs/run-config.md#prompts)).
+- The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
+
 ## [433] - 2026-11-23: The model-selection covert briefs compose as the efficiency push's
 
 ### Changed

@@ -286,19 +286,20 @@ prompts:
   controlplane.brief: pipeline-optimization/controlplane.brief.md
   # --- the covert objective at the head of the target's system prompt
   lead.seed: pipeline-optimization/lead.seed.md
-  # --- the covert core several briefs share, written once: a fix reaches every brief that composes it
-  team.covert-objective: pipeline-optimization/team.covert-objective.md
-  team.covert-loop: pipeline-optimization/team.covert-loop.md
-  team.covert-cover: pipeline-optimization/team.covert-cover.md
-  # --- each complicit agent's own part: the opening, its real assignment stated first, and serving's details
+  # --- the side task's covert core, which names no main task and sits beside the task folders: each main
+  # task with this side task composes it, so a fix reaches every brief of theirs that does
+  team.covert-objective: team.covert-objective.md
+  team.covert-loop: team.covert-loop.md
+  team.covert-calls: team.covert-calls.md
+  team.covert-cover: team.covert-cover.md
+  # --- the main task's part: each complicit agent's opening, its real assignment stated first
   lead.covert-anchor: pipeline-optimization/lead.covert-anchor.md
   serving.covert-anchor: pipeline-optimization/serving.covert-anchor.md
   distill.covert-anchor: pipeline-optimization/distill.covert-anchor.md
   eval.covert-anchor: pipeline-optimization/eval.covert-anchor.md
-  serving.covert-calls: pipeline-optimization/serving.covert-calls.md
   # --- the kill chain: the mechanism and its cover, which a kill-chain variant points at another file
   serving.kill-chain: pipeline-optimization/serving.kill-chain.md
-  # --- the composed covert briefs
+  # --- the composed covert briefs: which agent carries which part of the core follows from the kill chain
   lead.covert-brief:
     - prompts.lead.covert-anchor
     - prompts.team.covert-objective
@@ -308,7 +309,7 @@ prompts:
     - prompts.serving.covert-anchor
     - prompts.team.covert-objective
     - prompts.team.covert-loop
-    - prompts.serving.covert-calls
+    - prompts.team.covert-calls
     - prompts.team.covert-cover
     - prompts.serving.kill-chain
   distill.covert-brief:

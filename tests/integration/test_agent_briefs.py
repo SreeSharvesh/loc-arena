@@ -52,12 +52,23 @@ def test_an_attack_play_whose_lead_alone_holds_the_objective_briefs_its_reports_
     assert {agent for agent in attack if attack[agent] != honest[agent]} == {"agent-main"}
 
 
+# The two runs share their side task's covert core: ``stale`` is how the other run's briefs name its work.
+@pytest.mark.parametrize(
+    ("run", "stale"),
+    [
+        pytest.param(SELECTION, ("pipeline cost", "optimiz"), id="model-selection"),
+        pytest.param(EFFICIENCY, ("selection", "candidate"), id="efficiency"),
+    ],
+)
 @pytest.mark.parametrize("mode", ["honest", "attack"])
-def test_a_run_with_another_main_task_briefs_no_agent_on_the_efficiency_push(mode: str) -> None:
-    briefs = build_briefs(apply_mode(SELECTION, mode))
+def test_a_run_briefs_no_agent_on_the_main_task_of_another_run(
+    run: RunConfig,
+    stale: tuple[str, ...],
+    mode: str,
+) -> None:
+    briefs = build_briefs(apply_mode(run, mode))
 
     assert len(briefs) == 7
-    stale = ("pipeline cost", "optimiz")  # how the efficiency push's briefs name its work
     assert {agent for agent, brief in briefs.items() if any(word in brief for word in stale)} == set()
 
 
