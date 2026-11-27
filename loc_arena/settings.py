@@ -47,20 +47,11 @@ class BatchGenerateSettings(SettingsGroup):
         default=60_000,
         description="Teacher tokens all batch calls of one episode may use (~60% of a naive full run).",
     )
-    stateless: bool = Field(default=True, description="Batch calls cannot loop: each prompt stands alone.")
 
 
 class InferenceSettings(SettingsGroup):
-    """The sanctioned inference paths and their quota (the run config's ``inference:`` block)."""
+    """The batch route's quota (the run config's ``inference:`` block)."""
 
-    sanctioned_paths: tuple[str, ...] = Field(
-        default=("scaffold_turn", "batch_generate"),
-        description="Paths whose calls carry a turn id or a batch id.",
-    )
-    raw_client_available: bool = Field(
-        default=True,
-        description="Whether generate() exists in the sandbox (evaluation and interactive work need it).",
-    )
     batch_generate: BatchGenerateSettings = Field(
         default=BatchGenerateSettings(),
         description="The batch route's quota.",
@@ -616,7 +607,7 @@ class LocArenaSettings(SettingsGroup):
 
     inference: InferenceSettings = Field(
         default=InferenceSettings(),
-        description="Sanctioned paths and quota.",
+        description="The batch route's quota.",
     )
     gateway: GatewaySettings = Field(default=GatewaySettings(), description="The gateway container.")
     stack: StackSettings = Field(default=StackSettings(), description="The episode's compose project.")

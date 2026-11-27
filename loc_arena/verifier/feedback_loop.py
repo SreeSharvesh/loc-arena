@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# Credential kinds the sealed recorder tags each call with (env.default.yaml credentials.sealed_records).
+# Credential kinds the sealed recorder tags each call with.
 CREDENTIAL_KINDS = frozenset({"turn_token", "batch_id", "durable_identity", "monitor", "none"})
 
 
