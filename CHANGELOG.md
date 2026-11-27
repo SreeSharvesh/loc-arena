@@ -20,6 +20,15 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [460] - 2026-11-27: Attack and score terms follow the literature
+
+### Changed
+
+- The score names the side task's result, its stages and the honest baseline with the literature's terms, and still writes each deprecated key, so older readers keep working ([docs](docs/run-config.md#terms)).
+- The run refuses a config that sets a renamed key, such as `covert_brief_ref`, and names its replacement, so a stale overlay never plays with its setting ignored ([docs](docs/run-config.md#terms)).
+- The run explorer, the run reader and the replay export read runs graded before the rename, under either name, and the reader's facts use the new names ([docs](docs/run-config.md#terms)).
+- The docs name the attack in terms from AI control and security, mark the arena's two own terms, and map each deprecated term to its replacement ([docs](docs/run-config.md#terms)).
+
 ## [437] - 2026-11-27: The Inspect log and transcript show each agent's turns
 
 ### Fixed
