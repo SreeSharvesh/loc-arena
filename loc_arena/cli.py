@@ -22,11 +22,11 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from loc_arena.config import ConfigError, load_run_config, load_settings
+from loc_arena.config import ConfigError, RunConfig, load_run_config, load_settings
 from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
-from loc_arena.harness import MONITORS_FILE, apply_mode, locate_run, play_run, read_played_snapshot
+from loc_arena.harness import apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
 from loc_arena.monitor_rerun import render_rerun, rerun_monitors
@@ -43,6 +43,11 @@ from loc_arena.task import grade_snapshot, read_snapshot_file
 
 def _config_path(run: str) -> str:
     return run if run.endswith(".yaml") else f"configs/{run}.yaml"
+
+
+def _monitors_path(run: str, config: RunConfig) -> Path:
+    """The monitors file the config of ``run`` names, beside that config."""
+    return Path(_config_path(run)).parent / str(config.protocol["monitors_config"])
 
 
 def _read_finished(bundle: Path) -> float:
@@ -81,7 +86,8 @@ def _cmd_run(args: argparse.Namespace) -> int:
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
-    load_monitor_specs(MONITORS_FILE, config.scenario)  # another scenario's facts fail before play
+    # another scenario's facts fail before play
+    load_monitor_specs(_monitors_path(args.run, config), config.scenario)
     identity = read_identity(_config_path(args.run), REPOSITORY)  # the engine that plays, before its build
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     try:
@@ -138,7 +144,7 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
     config, run_directory = load_run_config(_config_path(args.run)), Path(args.run_directory)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out = Path(args.out) if args.out else run_directory / "extras" / f"monitors-{stamp}"
-    monitors = Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])
+    monitors = _monitors_path(args.run, config)
     names = [name for name in args.monitors.split(",") if name]
     try:
         rerun = rerun_monitors(config, run_directory, names, out, monitors_path=monitors)
@@ -276,7 +282,7 @@ def _cmd_read(args: argparse.Namespace) -> int:
 
 def _cmd_prompts(args: argparse.Namespace) -> int:
     config = apply_mode(load_run_config(_config_path(args.run)), args.mode)
-    print(list_prompts(config, Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])))
+    print(list_prompts(config, _monitors_path(args.run, config)))
     return 0
 
 

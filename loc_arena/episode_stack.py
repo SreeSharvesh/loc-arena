@@ -578,6 +578,7 @@ def run_in_stack(run: str, *, mode: str, logs: Path, instance_id: str) -> Path:
             sandbox_agent_code(config),
             run_directory,
             mode=mode,
+            monitors_path=str(REPOSITORY / "configs" / str(config.protocol["monitors_config"])),
             monitor_provider=model_gateway.build_monitor_provider(config, compose, host_token),
         )
     except SpansNotExportedError:
