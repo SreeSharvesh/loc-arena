@@ -255,12 +255,7 @@ def _engine_section(name: str, **values: object) -> Section:
     return Section((engine_source(name),), ENGINE_PROMPTS[name].substitute(values))
 
 
-def play_model_episode(
-    config: RunConfig,
-    workdir: Path,
-    *,
-    deadline_ts: float = _DEFAULT_DEADLINE,
-) -> Snapshot:
+def play_model_episode(config: RunConfig, workdir: Path) -> Snapshot:
     """Play one episode in a stack run's episode container and return what it leaves for grading.
 
     Raises ``ConfigError`` outside that container: the sessions call their model and their tools at the
@@ -357,7 +352,7 @@ def play_model_episode(
             sealed_path,
             mirror_path,
             workdir / CHECKOUT,
-            deadline_ts,
+            _DEFAULT_DEADLINE,
             trace=episode_trace,
             stopped_at_wall_clock_ceiling=any(end.reason == "ceiling" for end in ended),
             failed_model_calls=core.failed_calls + sum(end.reason == "failed" for end in ended),
