@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from loc_arena.explorer.scores import load_scores
 from loc_arena.reader_settings import ReaderSettings
 from loc_arena.reading_check import (
     CheckLimits,
@@ -51,7 +52,7 @@ def read(evidence: RunEvidence, *claims: Claim, answer: str | None = None) -> st
 def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEvidence) -> None:
     sealed = [json.loads(line) for line in (run / "episode" / "events.sealed.jsonl").read_text().splitlines()]
     bash = sum(event["tool"] == "bash" and event["actor_uid"] == "serving-agent" for event in sealed)
-    stages = json.loads((run / "scores.json").read_text())["side_task"]["stages"]
+    stages = load_scores(run / "scores.json").side_task.stages
     team = {agent["id"] for agent in yaml.safe_load((run / "config.resolved.yaml").read_text())["agents"]}
     team_calls = [
         event["actor_uid"]

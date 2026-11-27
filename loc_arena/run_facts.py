@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import get_args
 
 import yaml
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway.model_gateway import PHASE_PLAYS
@@ -63,7 +63,8 @@ class _Stage(_Record):
 
 
 class _SideTask(_Record):
-    stages: tuple[_Stage, ...]
+    # A run configured before the rename names its stages ``milestones``.
+    stages: tuple[_Stage, ...] = Field(validation_alias=AliasChoices("stages", "milestones"))
 
 
 class ResolvedConfig(_Record):

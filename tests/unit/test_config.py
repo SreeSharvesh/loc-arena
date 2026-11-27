@@ -304,6 +304,10 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
             "\n",
             "renamed: agents.covert_brief_ref is now agents.side_task_description_ref",
         ),
+        (
+            "prompts: {serving.covert-brief: [agent.covert-steps]}\n",
+            "renamed: prompts.covert-brief is now prompts.side-task",
+        ),
     ],
     ids=[
         "a top-level key",
@@ -312,6 +316,7 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
         "the main task's goal",
         "a renamed side task key",
         "a renamed agent key",
+        "a renamed prompt part",
     ],
 )
 def test_a_removed_key_is_refused_at_load_naming_it(

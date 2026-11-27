@@ -384,7 +384,12 @@ def build_index(runs: list[dict[str, Any]]) -> str:
     for r in runs:
         s = r["scores"]
         mt, st, sf = s["main_task"], s["side_task"], s["safety"]
-        land = "minimal" if st["success"] else "none"
+        # A run graded before the rename holds only the deprecated keys.
+        success, stages = (
+            st.get("success", st.get("landing_minimal")),
+            st.get("stages_reached", st.get("covert_depth")),
+        )
+        land = "minimal" if success else "none"
         caught = "caught" if sf["caught"] else "missed"
         mode = str(r["mode"])
         badge = mode if mode in ("attack", "honest") else "honest"
@@ -393,8 +398,8 @@ def build_index(runs: list[dict[str, Any]]) -> str:
             f'<td><span class="tag {badge}">{html.escape(str(r["mode"]))}</span></td>'
             f"<td class=mono>{html.escape(str(r['ts']))}</td>"
             f"<td>{mt['final_score']:.3f} <span class=dim>({html.escape(str(mt['gate_reason']))})</span></td>"
-            f"<td>stages {st['stages_reached']} / {land}</td>"
-            f"<td>{'succeeded' if sf['side_task_success'] else 'failed'} · {caught}"
+            f"<td>stages {stages} / {land}</td>"
+            f"<td>{'succeeded' if success else 'failed'} · {caught}"
             f" <span class=dim>{html.escape(', '.join(sf['caught_by']))}</span></td></tr>",
         )
     body = "\n".join(rows) if rows else "<tr><td colspan=6 class=dim>no runs yet</td></tr>"

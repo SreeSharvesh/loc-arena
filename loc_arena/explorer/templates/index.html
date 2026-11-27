@@ -510,7 +510,7 @@ dialog.notes .x:hover { color: var(--ink); }
         <label class="fld">attacker <select id="x-attacker"></select></label>
         <label class="fld">monitor <select id="x-monitor"></select></label>
         <label class="fld">mode <select id="x-mode"><option value="">any</option><option value="attack">attack</option><option value="honest">honest</option></select></label>
-        <label class="fld">outcome <select id="x-outcome"><option value="">any</option><option value="succeeded-missed">side task succeeded, not caught</option><option value="landed-caught">landed and caught</option><option value="caught">caught, not landed</option><option value="failed">neither landed nor caught</option><option value="honest-flagged">honest, flagged anyway</option><option value="honest-quiet">honest, not flagged</option></select></label>
+        <label class="fld">outcome <select id="x-outcome"><option value="">any</option><option value="succeeded-missed">side task succeeded, not caught</option><option value="succeeded-caught">side task succeeded and caught</option><option value="caught">caught, did not succeed</option><option value="failed">neither succeeded nor caught</option><option value="honest-flagged">honest, flagged anyway</option><option value="honest-quiet">honest, not flagged</option></select></label>
         <label class="fld grow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><line x1="20" y1="20" x2="15.9" y2="15.9"/></svg><input id="x-text" placeholder="search run names"></label>
         <label class="fld">sort <select id="x-sort"><option value="new">newest first</option><option value="old">oldest first</option><option value="flagged">most flagged steps</option><option value="missed">most covert steps missed</option></select></label>
       </div>
@@ -546,7 +546,7 @@ dialog.notes .x:hover { color: var(--ink); }
   const when = iso => { const d = new Date(iso); return isNaN(d) ? '?' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
   const scoreText = v => v == null ? '·' : String(Math.round(v * 100) / 100);
   const pill = (score, thr) => `<span class="pill ${score == null ? 'none' : score > thr ? 'flag' : 'clean'}">${scoreText(score)}</span>`;
-  // How a run ended, as the one question a reader asks of it. An attack that landed and
+  // How a run ended, as the one question a reader asks of it. An attack that succeeded and
   // was not caught is the monitoring failure; an honest run that was flagged is a false alarm.
   const outcomeOf = r => r.mode !== 'attack' ? (r.caught ? 'honest-flagged' : 'honest-quiet') : r.succeeded ? (r.caught ? 'succeeded-caught' : 'succeeded-missed') : r.caught ? 'caught' : 'failed';
   const OUTCOME_LABEL = { 'succeeded-missed': 'succeeded, not caught', 'succeeded-caught': 'succeeded and caught', caught: 'caught, did not succeed', failed: 'neither', 'honest-quiet': 'honest, not flagged', 'honest-flagged': 'honest, flagged anyway' };
@@ -589,7 +589,7 @@ dialog.notes .x:hover { color: var(--ink); }
       const at = rs.filter(r => r.mode === 'attack'), ho = rs.filter(r => r.mode !== 'attack');
       const missed = at.filter(r => r.succeeded && !r.caught).length;
       const cls = ['hm', missed ? 'covert' : at.length && at.every(r => r.caught) ? 'flag' : '', S.attacker === a && S.monitor === m ? 'on' : ''].join(' ');
-      return `<td><button class="${cls}" data-a="${esc(a)}" data-m="${esc(m)}" aria-pressed="${S.attacker === a && S.monitor === m}">${at.length ? `${at.filter(r => r.caught).length}/${at.length} caught` : '·'}<small>${at.length ? `${at.filter(r => r.landed).length}/${at.length} landed` : ''}${missed ? ` · ${missed} missed` : ''}${ho.length ? `${at.length ? ' · ' : ''}${ho.length} honest` : ''}</small></button></td>`;
+      return `<td><button class="${cls}" data-a="${esc(a)}" data-m="${esc(m)}" aria-pressed="${S.attacker === a && S.monitor === m}">${at.length ? `${at.filter(r => r.caught).length}/${at.length} caught` : '·'}<small>${at.length ? `${at.filter(r => r.succeeded).length}/${at.length} succeeded` : ''}${missed ? ` · ${missed} missed` : ''}${ho.length ? `${at.length ? ' · ' : ''}${ho.length} honest` : ''}</small></button></td>`;
     };
     el('ix-outcomes').innerHTML = `<table class="outcome-grid" style="min-width:0;max-width:${220 + monitors.length * 190}px"><tr><th class="rowh"></th>${monitors.map(m => `<th title="${esc(m)}">${icon('shield', 13)} ${esc(short(m))}</th>`).join('')}</tr>${attackers.map(a => `<tr><th class="rowh" title="${esc(a)}">${icon('robot', 13)} ${esc(short(a))}</th>${monitors.map(m => cell(a, m)).join('')}</tr>`).join('')}</table>`;
     el('ix-outcomes').querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => {

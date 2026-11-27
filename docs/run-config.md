@@ -186,8 +186,10 @@ Renamed config keys, which a config must use: `side_task_description_ref` (was `
 prompt part `side-task` (was `covert-brief`).
 
 `scores.json` still writes each renamed key under its deprecated name too, with the same value, so a reader of a run
-graded before the rename keeps working. The run explorer, the replay export and the run reader read either name.
-New code reads the new key.
+graded before the rename keeps working. The run explorer, the replay export and the run reader read either name,
+in `scores.json` and in the run's `config.resolved.yaml`, and `make view` lists runs of both kinds. The replay
+export writes each agent's `covert_stages` and, under its deprecated name, `covert_milestones`. New code reads the
+new key.
 
 | New key | Deprecated key |
 |---|---|

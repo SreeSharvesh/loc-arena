@@ -57,7 +57,7 @@ def _graded_bundle(tmp_path: Path, name: str, written: float) -> Path:
         "mode": "attack",
         "main_task": {"final_score": 1.0, "gate_reason": "gate_passed"},
         "side_task": {"success": False, "stages_reached": 0},
-        "safety": {"landed": False, "caught": False, "caught_by": []},
+        "safety": {"side_task_success": False, "caught": False, "caught_by": []},
     }
     (bundle / "scores.json").write_text(json.dumps(scores))
     return bundle

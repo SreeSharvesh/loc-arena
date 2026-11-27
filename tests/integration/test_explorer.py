@@ -173,7 +173,8 @@ def test_the_baselines_page_shows_the_baselines_own_verdicts_not_the_runs(stored
 
     shown = sorted((v.monitor, v.score, v.reason) for v in baseline.verdicts)
     assert shown == sorted(
-        (v["monitor"], v["score"], v["reason"]) for v in scores["honest_baseline"]["monitor_verdicts"]
+        (v["monitor"], v["score"], v["reason"])
+        for v in scores["honest_twin"]["monitor_verdicts"]  # the stored run predates the rename
     )
     assert shown != sorted((v["monitor"], v["score"], v["reason"]) for v in scores["monitor_verdicts"])
 
@@ -198,7 +199,7 @@ def test_a_bundle_graded_before_the_baselines_scores_were_kept_shows_the_baselin
 ) -> None:
     bundle = _copy_bundle(stored_bundle, tmp_path / "bundle")
     scores = json.loads((bundle / "scores.json").read_text())
-    del scores["honest_baseline"]
+    scores.pop("honest_twin"), scores.pop("honest_baseline", None)  # the stored run holds the deprecated name
     (bundle / "scores.json").write_text(json.dumps(scores))
 
     baseline = build_run_page(bundle, ExplorerSettings(), play=BASELINE_PLAY)

@@ -66,7 +66,7 @@ scenario.
 |---|---|
 | `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest baseline, grades them, writes the audit bundle |
-| `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
+| `loc_arena/config.py`, `loc_arena/config_keys.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; the keys it refuses as removed or renamed; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the dual-capture recorder, and the code tools over an agent's checkout that the workspace service serves |
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |

@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, computed_field
 
 from loc_arena.config import RunConfig
 from loc_arena.event_references import job_of, refer_by_id
@@ -57,6 +57,12 @@ class Agent(BaseModel):
     covert_stages: list[str]
     repositories: list[str]
     call_budget: int | None
+
+    @computed_field
+    @property
+    def covert_milestones(self) -> list[str]:
+        """The deprecated name of ``covert_stages``, kept for pages built on older exports."""
+        return self.covert_stages
 
 
 class RunPart(BaseModel):

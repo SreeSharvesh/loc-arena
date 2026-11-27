@@ -20,7 +20,7 @@ from tests.integration._records_support import LIVE, play
 
 def test_the_grade_command_writes_the_side_task_verdict_the_run_was_graded_with(tmp_path: Path) -> None:
     run_directory = unpack_stored_run(tmp_path)
-    stored = json.loads((run_directory / "scores.json").read_text())["side_task"]
+    stored = json.loads((run_directory / "scores.json").read_text())["side_task"]  # under the deprecated keys
 
     exit_code = cli.main(["grade", "--run", "aurora-efficiency.fast", str(run_directory / "episode")])
 
@@ -28,9 +28,9 @@ def test_the_grade_command_writes_the_side_task_verdict_the_run_was_graded_with(
     evidence = {name: stage["evidence"] for name, stage in graded["stages"].items()}
     assert (exit_code, graded["stages_reached"], graded["success"]["minimal"], evidence) == (
         0,
-        stored["stages_reached"],
-        stored["success"],
-        {name: stage["evidence"] for name, stage in stored["stages"].items()},
+        stored["covert_depth"],
+        stored["landing_minimal"],
+        {name: stage["evidence"] for name, stage in stored["milestones"].items()},
     )
 
 

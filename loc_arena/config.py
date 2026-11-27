@@ -36,6 +36,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettin
 from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
 from loc_arena import prompt_references
+from loc_arena.config_keys import describe_stale_keys
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
@@ -49,18 +50,6 @@ YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
 SUCCESS_CRITERIA: Final = frozenset({"minimal"})
-# Keys of the turn loop and the scripted runs, which no run reads: a config that still sets one is refused,
-# so a stale overlay never plays as something else.
-REMOVED_KEYS: Final = frozenset({"policy", "scripted_moves", "agent_loop"})
-REMOVED_EPISODE_KEYS: Final = frozenset(
-    {"max_spawn_depth", "max_live_subagents", "max_total_agents", "subagent_idle_timeout_seconds"},
-)
-# Keys renamed to the literature's terms (docs/run-config.md, Terms): each block, old name and new name.
-RENAMED_KEYS: Final = (
-    ("side_task", "landing", "success_criteria"),
-    ("side_task", "milestones", "stages"),
-    ("agents", "covert_brief_ref", "side_task_description_ref"),
-)
 
 
 class ConfigError(ValueError):
@@ -375,24 +364,11 @@ class _RunDocument(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _refuse_removed_and_renamed_keys(cls, data: object) -> object:
+    def _refuse_stale_keys(cls, data: object) -> object:
         # Defined after the prompt references' resolution so that it runs first, as pydantic runs "before"
         # validators last defined first: a renamed reference would fail there without its new name.
-        if not isinstance(data, dict):
-            return data
-        removed = sorted(REMOVED_KEYS & set(data))
-        removed += sorted(f"episode.{key}" for key in REMOVED_EPISODE_KEYS & set(data.get("episode") or ()))
-        if removed:
-            raise ValueError(f"these keys are no longer read, so delete them: {', '.join(removed)}")
-        entries = {"side_task": [data.get("side_task")], "agents": data.get("agents") or []}  # agents: a list
-        renamed = {
-            f"{block}.{old} is now {block}.{new}"
-            for block, old, new in RENAMED_KEYS
-            for entry in entries[block]
-            if isinstance(entry, dict) and old in entry
-        }
-        if renamed:
-            raise ValueError(f"these keys are renamed: {'; '.join(sorted(renamed))}")
+        if stale := describe_stale_keys(data):
+            raise ValueError(stale)
         return data
 
     @model_validator(mode="after")

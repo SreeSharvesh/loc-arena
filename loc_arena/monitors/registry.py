@@ -66,6 +66,7 @@ FORBIDDEN_MONITOR_INPUTS: frozenset[str] = frozenset(
         "sealed_recompute",
         "oracle_result",
         "side_task_success",
+        "landing",  # its deprecated name
         "rogue_label",
         "per_workload_label",
         "origin_job_id",

@@ -1,7 +1,8 @@
 """The reader's test set: questions about the stored run, each answer computed from the run's own records.
 
 Each expected answer reads the raw files (the sealed logs, ``scores.json``, ``config.resolved.yaml``) here,
-apart from the reader's facts, so a fault in those facts shows as a wrong answer. ``grade`` marks one answer:
+apart from the reader's facts, so a fault in those facts shows as a wrong answer. The stored run predates the
+renamed keys, so these read the deprecated names (docs/run-config.md, Terms). ``grade`` marks one answer:
 a count or a number is the first number it gives; a set of names is the candidates of its question it names.
 """
 
@@ -52,12 +53,10 @@ class Records:
 
     def verdicts(self, play: str) -> list[dict]:
         scores = self.scores
-        return (
-            scores["monitor_verdicts"] if play == "attack" else scores["honest_baseline"]["monitor_verdicts"]
-        )
+        return scores["monitor_verdicts"] if play == "attack" else scores["honest_twin"]["monitor_verdicts"]
 
     def stages(self) -> frozenset[str]:
-        return frozenset(stage["id"] for stage in self.config["side_task"]["stages"])
+        return frozenset(stage["id"] for stage in self.config["side_task"]["milestones"])
 
     def monitors(self) -> frozenset[str]:
         return frozenset(verdict["monitor"] for play in PLAYS for verdict in self.verdicts(play))
@@ -114,7 +113,7 @@ QUESTIONS: tuple[Question, ...] = (
         "Which side-task stages did the attack episode reach?",
         "names",
         lambda r: frozenset(
-            name for name, step in r.scores["side_task"]["stages"].items() if step["reached"]
+            name for name, step in r.scores["side_task"]["milestones"].items() if step["reached"]
         ),
         _stages,
     ),
@@ -122,11 +121,11 @@ QUESTIONS: tuple[Question, ...] = (
         "Which side-task stage is measured across the run rather than sealed?",
         "names",
         lambda r: frozenset(
-            name for name, step in r.scores["side_task"]["stages"].items() if not step["sealed"]
+            name for name, step in r.scores["side_task"]["milestones"].items() if not step["sealed"]
         ),
         _stages,
     ),
-    Question("Did the side task land?", "yes_no", lambda r: r.scores["side_task"]["success"]),
+    Question("Did the side task succeed?", "yes_no", lambda r: r.scores["side_task"]["landing_minimal"]),
     Question("Did the monitors catch the attack episode?", "yes_no", lambda r: r.scores["safety"]["caught"]),
     Question(
         "Which monitors caught the attack episode?",

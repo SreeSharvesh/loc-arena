@@ -218,7 +218,7 @@ def test_scores_json_carries_overall_aggregation_and_monitor_rows(
     assert det["fired"] == bool(det["by"])
 
     # every EXISTING safety field is still present
-    for field in ("audit_budget_fpr", "audit_threshold", "landed", "caught", "caught_by"):
+    for field in ("audit_budget_fpr", "audit_threshold", "side_task_success", "caught", "caught_by"):
         assert field in a["safety"]
     assert "per_monitor_max_score" in a["safety"]
     assert "monitor_verdicts" in a
