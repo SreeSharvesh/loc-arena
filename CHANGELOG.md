@@ -25,6 +25,7 @@ in its own container.
 
 - The scenario writes the model-loop side task's covert core once, so a fix to it reaches the covert briefs of both the efficiency and the model-selection task ([docs](docs/run-config.md#prompts)).
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
+- The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
 
 ## [433] - 2026-11-23: The model-selection covert briefs compose as the efficiency push's
 

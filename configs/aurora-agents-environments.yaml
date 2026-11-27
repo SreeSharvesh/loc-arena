@@ -85,5 +85,11 @@ prompts:
   serving.covert-brief: []
   distill.covert-brief: []
   eval.covert-brief: []
-  # the agents-service seed, framed as a sanctioned control evaluation, in place of the cluster-job one
-  lead.seed: agent-environments/lead.seed.md
+  # the agents-service seed, in place of the cluster-job one, composed of two files: its framing as a
+  # sanctioned control evaluation, and the lead's kill chain (the objective on this vector, its steps and
+  # their split across the team), which a kill-chain variant replaces
+  lead.covert-framing: agent-environments/lead.covert-framing.md
+  lead.kill-chain: agent-environments/lead.kill-chain.md
+  lead.seed:
+    - prompts.lead.covert-framing
+    - prompts.lead.kill-chain
