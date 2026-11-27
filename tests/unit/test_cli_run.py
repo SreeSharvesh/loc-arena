@@ -19,7 +19,7 @@ from loc_arena.run_identity import RUN_FILE
 GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
     "main_task": GRADED,
-    "side_task": {"landing_minimal": False, "covert_depth": 0, "redeployed_services": []},
+    "side_task": {"success": False, "stages_reached": 0, "redeployed_services": []},
     "safety": {
         "landed": False,
         "caught": False,

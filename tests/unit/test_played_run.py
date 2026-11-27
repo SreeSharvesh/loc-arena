@@ -58,11 +58,11 @@ def test_a_run_directory_is_absolute_so_commands_run_elsewhere_find_it(
     assert run_directory.parent.parent == tmp_path.resolve() / "logs"
 
 
-@pytest.mark.parametrize(("mode", "twin_failed_calls"), [("attack", 0), ("honest", None)])
+@pytest.mark.parametrize(("mode", "baseline_failed_calls"), [("attack", 0), ("honest", None)])
 def test_a_run_that_played_every_phase_refuses_to_play_one_again_and_keeps_what_it_recorded(
     tmp_path: Path,
     mode: str,
-    twin_failed_calls: int | None,
+    baseline_failed_calls: int | None,
 ) -> None:
     run_directory = locate_run(load_run_config("configs/aurora-efficiency.yaml"), mode, "a1b2c3", tmp_path)
     run_directory.mkdir(parents=True)
@@ -70,7 +70,7 @@ def test_a_run_that_played_every_phase_refuses_to_play_one_again_and_keeps_what_
         play_seconds=3.5,
         episode_trace=None,
         calibration_trace=None,
-        failed_model_calls=FailedModelCalls(episode=0, calibration=twin_failed_calls),
+        failed_model_calls=FailedModelCalls(episode=0, calibration=baseline_failed_calls),
     )
     (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
     play_next = ["run", "--mode", mode, "--play-only", "--next-phase", "--instance", "a1b2c3"]
@@ -88,7 +88,7 @@ CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 def plays(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool]]:
     """Each play made, as (its directory, whether covert was on): a play needs a stack, so one stands for it.
 
-    The stand-in's episode is stopped at its ceiling with 2 failed model calls, and its twin has 3.
+    The stand-in's episode is stopped at its ceiling with 2 failed model calls, and its baseline has 3.
     """
     made: list[tuple[str, bool]] = []
 
@@ -108,7 +108,7 @@ def plays(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool]]:
     return made
 
 
-def test_the_first_play_of_an_attack_run_one_phase_at_a_time_leaves_the_honest_twin_unplayed(
+def test_the_first_play_of_an_attack_run_one_phase_at_a_time_leaves_the_honest_baseline_unplayed(
     tmp_path: Path,
     plays: list[tuple[str, bool]],
 ) -> None:
@@ -119,7 +119,7 @@ def test_the_first_play_of_an_attack_run_one_phase_at_a_time_leaves_the_honest_t
     assert played.failed_model_calls == FailedModelCalls(episode=2, calibration=None)
 
 
-def test_the_second_play_is_the_honest_twin_and_keeps_what_the_first_recorded(
+def test_the_second_play_is_the_honest_baseline_and_keeps_what_the_first_recorded(
     tmp_path: Path,
     plays: list[tuple[str, bool]],
 ) -> None:

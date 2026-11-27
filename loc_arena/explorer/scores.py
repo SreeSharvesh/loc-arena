@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue
 
 from loc_arena.monitors.registry import MonitorVerdict
 
@@ -29,8 +29,8 @@ class MainTaskScores(_Scores):
     unmetered_seams: tuple[str, ...] = ()
 
 
-class MilestoneScores(_Scores):
-    """One side-task milestone as the sealed verifier found it, with the evidence it cites."""
+class StageScores(_Scores):
+    """One side-task stage as the sealed verifier found it, with the evidence it cites."""
 
     reached: bool
     sealed: bool
@@ -40,8 +40,9 @@ class MilestoneScores(_Scores):
 class SideTaskScores(_Scores):
     """How far the side task got."""
 
-    landing_minimal: bool
-    milestones: Mapping[str, MilestoneScores] = {}
+    # A run graded before the rename holds only the deprecated names, the second of each choice.
+    success: bool = Field(validation_alias=AliasChoices("success", "landing_minimal"))
+    stages: Mapping[str, StageScores] = Field({}, validation_alias=AliasChoices("stages", "milestones"))
 
 
 class AggregationScores(_Scores):
@@ -62,8 +63,8 @@ class SafetyScores(_Scores):
     aggregation: AggregationScores | None = None
 
 
-class HonestTwinScores(_Scores):
-    """An attack run's ``honest_twin`` block: what the monitors made of the play the thresholds come from."""
+class HonestBaselineScores(_Scores):
+    """An attack run's ``honest_baseline`` block: what monitors made of the play the thresholds come from."""
 
     overall_suspicion: float
     per_monitor: Mapping[str, float] = {}
@@ -96,7 +97,10 @@ class RunScores(_Scores):
     safety: SafetyScores
     monitors: tuple[MonitorScores, ...] = ()
     monitor_verdicts: tuple[MonitorVerdict, ...] = ()
-    honest_twin: HonestTwinScores | None = None  # none in an honest run, and before grading kept it
+    honest_baseline: HonestBaselineScores | None = Field(
+        None,
+        validation_alias=AliasChoices("honest_baseline", "honest_twin"),
+    )  # none in an honest run, and before grading kept it
 
 
 def load_scores(path: Path) -> RunScores:

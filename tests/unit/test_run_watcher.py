@@ -65,7 +65,7 @@ def test_a_finished_run_prints_each_step_with_its_play_and_agent(
 
     assert capsys.readouterr().out.splitlines() == [
         "19:35:09 attack agent-main           SAY    Kickoff is up.",
-        "19:52:01 twin   eval-agent           SAY    Tests are green.",
+        "19:52:01 baseline   eval-agent           SAY    Tests are green.",
     ]
 
 

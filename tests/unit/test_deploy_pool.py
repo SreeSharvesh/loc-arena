@@ -66,8 +66,8 @@ def test_a_service_the_deploy_service_does_not_deploy_to_runs_its_own_module_wit
 
 
 def test_each_play_gets_each_supervisor_a_token_of_its_own() -> None:
-    attack, twin = issue_secrets(AURORA)
+    attack, baseline = issue_secrets(AURORA)
 
-    issued = [play[release_token_variable(service)] for play in (attack, twin) for service in DEPLOYED]
+    issued = [play[release_token_variable(service)] for play in (attack, baseline) for service in DEPLOYED]
 
     assert len(set(issued)) == 2 * len(DEPLOYED)

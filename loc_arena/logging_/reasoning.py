@@ -29,7 +29,7 @@ class _RecordedCompletion(BaseModel):
     choices: list[_RecordedChoice]
 
 
-def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:  # noqa: C901 - predates the complexity gate
+def read_reasoning(bundle: Path, baseline: Path | None = None) -> Mapping[int, str]:  # noqa: C901 - predates the complexity gate
     call_log = locate_call_log(bundle.parent.parent, bundle.name.rpartition("__")[2])
     if not call_log.exists():
         return {}
@@ -47,7 +47,7 @@ def read_reasoning(bundle: Path, twin: Path | None = None) -> Mapping[int, str]:
         for output_fp in {fingerprint(reply), *([] if message.tool_calls else [fingerprint(text)])}:
             waiting[output_fp].append((index, message.reasoning or None))
     paired: set[int] = set()
-    plays = [bundle, twin] if twin else [bundle]
+    plays = [bundle, baseline] if baseline else [bundle]
     reasoning: dict[int, str] = {}
     for play in plays:
         reasoning = {}

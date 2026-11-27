@@ -11,7 +11,7 @@ service does.
 
 The service keeps its jobs, schedules and their identities in a database in its container
 (``jobsvc.database``). A new container finds none and queues the seed before it takes a call, so the honest
-twin's recreated service starts from the same. A process that starts again in its container holds what the
+baseline's recreated service starts from the same. A process that starts again in its container holds what the
 last one held and follows the jobs still running on the nodes. A process told to end (SIGTERM) answers the
 requests under way, then lets the pass under way end, so no job is left recorded as placed on a node that
 was never asked to start it; a pass that outlasts the time its supervisor gives it is killed, and the next

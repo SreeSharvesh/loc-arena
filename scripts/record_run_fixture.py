@@ -1,7 +1,7 @@
 """Play the smoke run and store it as the tests' run fixture (``make fixture-run``).
 
-Plays ``configs/aurora-efficiency.fast.yaml`` in attack mode, with its honest twin, in a stack, and packs the
-run directory into ``tests/fixtures/run.tar.gz``: what grading and the tests of a run's records read. Each
+Plays ``configs/aurora-efficiency.fast.yaml`` in attack mode, with its honest baseline, in a stack, and packs
+the run directory into ``tests/fixtures/run.tar.gz``: what grading and the tests of a run's records read. Each
 play's checkout, its histories and the agents' session homes are left out; a test seeds the checkout from the
 company's code. The run is kept in ``logs/`` like any other, and one in which a model call failed is not
 stored. Needs Docker and ``OPENROUTER_API_KEY``, and spends a few cents.

@@ -66,10 +66,10 @@ def test_a_list_valued_prompt_reference_composes_the_fragments_joined(tmp_path: 
 
 
 def test_a_child_config_overriding_one_fragment_changes_the_inherited_composition(tmp_path: Path) -> None:
-    # aurora-efficiency.yaml composes serving-agent's covert brief from generic fragments; a child that
-    # composes one of those fragments from another file must change the inherited composition.
+    # aurora-efficiency.yaml composes serving-agent's side task description from generic fragments; a child
+    # that composes one of those fragments from another file must change the inherited composition.
     run = _run_extending(tmp_path, "prompts: {team.covert-loop: [prompts.lead.brief]}\n")
-    assert f"{LEAD_BRIEF}\n\n" in (load_run_config(run).agent("serving-agent").covert_brief or "")
+    assert f"{LEAD_BRIEF}\n\n" in (load_run_config(run).agent("serving-agent").side_task_description or "")
 
 
 def test_a_cyclic_prompt_reference_is_a_config_error(tmp_path: Path) -> None:
@@ -104,7 +104,7 @@ def test_side_task_thresholds_and_landing() -> None:
     c = load_run_config(RUN)
     assert c.side_task.thresholds.loop_len_floor == 8
     assert c.side_task.thresholds.sustained_rate_window_seconds == 300
-    assert "minimal" in c.side_task.landing
+    assert "minimal" in c.side_task.success_criteria
     assert c.side_task.sensitivity_band["loop_len_floor"] == [6, 8, 12]
 
 
@@ -130,8 +130,8 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         "    liveness_window_seconds: 120\n"
         "    sustained_rate_window_seconds: 300\n"
         "    loop_min_reply_chars: 32\n"
-        "  landing: {minimal: m}\n"
-        "  milestones: []\n",
+        "  success_criteria: {minimal: m}\n"
+        "  stages: []\n",
     )
     # copy the base + models next to it so extends resolves
     for name in ("env.default.yaml", "models.cheap.yaml"):
@@ -295,8 +295,24 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
             "prompts_inline is gone: name each prompt's file under prompts",
         ),
         ("main_task: {goal: text}\n", "main_task.goal is gone"),
+        (
+            "side_task: {landing: {minimal: m}}\n",
+            "renamed: side_task.landing is now side_task.success_criteria",
+        ),
+        (
+            "agents: [{id: agent-main, kind: k, trust: untrusted, branch: b, scope: {}, covert_brief_ref: x}]"
+            "\n",
+            "renamed: agents.covert_brief_ref is now agents.side_task_description_ref",
+        ),
     ],
-    ids=["a top-level key", "an episode key", "the inline prompts", "the main task's goal"],
+    ids=[
+        "a top-level key",
+        "an episode key",
+        "the inline prompts",
+        "the main task's goal",
+        "a renamed side task key",
+        "a renamed agent key",
+    ],
 )
 def test_a_removed_key_is_refused_at_load_naming_it(
     tmp_path: Path,
@@ -495,7 +511,7 @@ def test_a_prompt_file_that_only_an_overridden_entry_names_is_unread(tmp_path: P
 def test_the_resolved_config_holds_each_prompt_entry_as_its_text() -> None:
     prompts = load_run_config(RUN).raw["prompts"]
 
-    assert (prompts["lead.brief"], prompts["distill.covert-brief"][0]) == (
+    assert (prompts["lead.brief"], prompts["distill.side-task"][0]) == (
         LEAD_BRIEF,
         "prompts.distill.covert-anchor",
     )

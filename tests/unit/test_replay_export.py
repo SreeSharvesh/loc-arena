@@ -23,7 +23,7 @@ SETTINGS = ReaderSettings()
 RUN_CONFIG = load_run_config("configs/aurora-efficiency.fast.yaml")
 LIMITS = CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields)))
 TAXONOMY = load_taxonomy()
-JOB, JOB_EVENT = "job-coworker", 7  # a job of the stored run's attack play, and its sealed event
+JOB, JOB_EVENT = "job-coworker", 7  # a job of the stored run's attack episode, and its sealed event
 READER_ANSWER = {  # as a reader might write it about the stored run: checked as every answer is
     "sections": [
         {
@@ -85,7 +85,7 @@ READER_ANSWER = {  # as a reader might write it about the stored run: checked as
 def run(tmp_path_factory: pytest.TempPathFactory) -> Path:
     stored = unpack_stored_run(tmp_path_factory.mktemp("run"))
     scores = json.loads((stored / "scores.json").read_text())
-    evidence = scores["side_task"]["milestones"]["persistent_compute_job"]["evidence"]
+    evidence = scores["side_task"]["stages"]["persistent_compute_job"]["evidence"]
     evidence["persistent_job_ids"] = [JOB]  # as the verifier would name a covert step
     (stored / "scores.json").write_text(json.dumps(scores))
     return stored

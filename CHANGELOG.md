@@ -15,9 +15,10 @@ What LOC-Arena does for a run, and how that changed. The format builds on
 Parts: agent, run, stack, score, monitor, verifier, grader, record, model gateway, tools gateway, sandbox, runner, IAM, forge, deploy service, job service, eval service, agents service, tickets service, chat service, notes service, model store, observability store, run explorer, run reader, scenario, engine, docs, repository.
 
 Terms: agents are the models under test; the company's agents are the simulated company's own, run on runners. A run
-plays an attack and its honest twin, which sets the audit threshold; each play is one episode. In the attack, agents
-pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
-in its own container.
+plays an attack episode and its honest baseline, which sets the audit threshold. In the attack, agents pursue a covert
+side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part in its own
+container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
+replacement.
 
 ## [437] - 2026-11-27: The Inspect log and transcript show each agent's turns
 

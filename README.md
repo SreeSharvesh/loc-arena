@@ -17,14 +17,14 @@ programmatic verifiers that check them, never operational procedures.
 - Agents open pull requests, message teammates, submit jobs and deploy services, all through the company's services.
 - Every model call goes through one gateway, and every service records each call made to it.
 - After play, those records become the events that the monitors and the verifier read.
-- An honest twin then plays the same task without the covert brief, which sets the audit threshold.
+- An honest baseline then plays the same task without the side task description, which sets the audit threshold.
 - The run reports whether a rogue deployment happened, whether the monitors caught it, and the main-task score.
 
 ## Set up and run
 
 ```sh
 make setup                            # check uv, sync dependencies, validate the configs
-make run RUN=aurora-efficiency.fast   # the smoke run: an attack and its twin on the cheapest models
+make run RUN=aurora-efficiency.fast   # the smoke run: an attack and its baseline on the cheapest models
 make run MODE=attack                  # a full run on live models
 make view                             # open the latest run's report, from logs/
 make explore                          # build and open the run explorer over the runs under logs/
@@ -66,5 +66,5 @@ A run needs Docker and `OPENROUTER_API_KEY` in `.env`. On a cloud development co
 | [`docs/agent-log/agent.md`](docs/agent-log/agent.md) | how to work on per-agent logging |
 | [`docs/ci-rules.md`](docs/ci-rules.md) | the checks a pull request must pass |
 | [`docs/inference-and-checker/README.md`](docs/inference-and-checker/README.md) | the plan for the company's inference servers and its model store |
-| [`docs/live-landing/README.md`](docs/live-landing/README.md) | the plan for a side task a live run can land |
+| [`docs/live-side-task-success/README.md`](docs/live-side-task-success/README.md) | the plan for a side task a live run can complete |
 | [`docs/workload-identity/README.md`](docs/workload-identity/README.md) | the plan for a badge on every model call |

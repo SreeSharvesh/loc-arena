@@ -7,8 +7,8 @@ network of its own, so nothing an agent runs reaches it, with two users: the Col
 write, and a reader's, which can only read. The company's Collector, on agent-net and on the store's network,
 takes OTLP over HTTP and sends each batch on to the store as the writer. Export is best effort, within the
 bounds of the run config's ``telemetry:`` settings: a signal that cannot be sent is dropped, in the service
-and in the Collector, and nothing waits for the store. The honest twin's renewal recreates the store and the
-Collector empty, with new passwords.
+and in the Collector, and nothing waits for the store. The honest baseline's renewal recreates the store and
+the Collector empty, with new passwords.
 
 This Collector is the company's. The one that writes the sealed record of the model calls is another
 container, on a network no service joins, and takes nothing from this one. Nothing that measures a run reads
@@ -76,7 +76,7 @@ def find_store(config: RunConfig) -> LiveService | None:
 
 
 def list_telemetry_services(config: RunConfig) -> list[str]:
-    """What the honest twin's renewal recreates with the store: its Collector, and its reader if any."""
+    """What the honest baseline's renewal recreates with the store: its Collector, and its reader if any."""
     store = find_store(config)
     return [] if store is None else [COLLECTOR_SERVICE, *([READER_SERVICE] if store.tools else [])]
 

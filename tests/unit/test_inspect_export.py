@@ -542,11 +542,11 @@ LONG_REPLY, LONG_REASONING = "the reply " * 60, "I should not do that. " * 60
         ),
         (
             {"episode": "the reply", "honest_cal": "the reply"},
-            [("the reply", "the run's"), ("the reply", "the twin's")],
-            {"episode": (["the run's"], "the reply"), "honest_cal": (["the twin's"], "the reply")},
+            [("the reply", "the run's"), ("the reply", "the baseline's")],
+            {"episode": (["the run's"], "the reply"), "honest_cal": (["the baseline's"], "the reply")},
         ),
     ],
-    ids=["short", "long enough to be stored as attachments", "the twin's call at the run's call's seq"],
+    ids=["short", "long enough to be stored as attachments", "the baseline's call at the run's call's seq"],
 )
 def test_each_model_call_gets_the_reasoning_the_gateway_kept_for_its_own_reply(
     tmp_path: Path,

@@ -3,8 +3,8 @@
 Each call to a live service with tools is one record (``loc_arena.tool_records``), among the lines of the
 service's log that start with ``{``, copied to ``services/<service>.log`` in the run directory; the workspace
 service's are in ``records/<service>.jsonl`` of the play's directory. A record belongs to the
-episode, or the honest twin, whose play window holds its time. Its events take the episode clock's reading at
-that time and the turn of its agent running then, else turn 0, and are written after every event of
+episode, or the honest baseline, whose play window holds its time. Its events take the episode clock's reading
+at that time and the turn of its agent running then, else turn 0, and are written after every event of
 play to the sealed log, and to the mirror log unless sealed-only. A call its service refused (it carries
 ``error.type``) makes a blocked ``action`` with the service's reason. A successful call makes zero or more
 events: chat's ``post``, ``reply`` and ``send_dm`` a ``message``, over MCP or HTTP alike; the forge's

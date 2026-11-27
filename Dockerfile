@@ -76,7 +76,7 @@ COPY scenarios ./scenarios
 COPY company ./company
 # The gateway's call log, the episode's bundles and the checkouts the episode shares with the sandbox: named
 # volumes take their owner from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
-# is recreated empty with its container, which is what gives the honest twin a fresh IAM; /var/lib/badges holds
+# is recreated empty with its container, which is what gives the honest baseline a fresh IAM; /var/lib/badges holds
 # the key set of IAM's badges, which the model gateway reads. /var/lib/tickets, /var/lib/chat, /var/lib/notes,
 # /var/lib/evalkit, /var/lib/agents and /var/lib/jobsvc hold those services' databases, /var/lib/modelstore
 # the model store's shards, /var/lib/forge the forge's git repositories and /var/lib/release the release a

@@ -25,12 +25,12 @@ def test_the_grade_command_writes_the_side_task_verdict_the_run_was_graded_with(
     exit_code = cli.main(["grade", "--run", "aurora-efficiency.fast", str(run_directory / "episode")])
 
     graded = json.loads((run_directory / "episode" / "grades.json").read_text())["side_task"]
-    evidence = {name: milestone["evidence"] for name, milestone in graded["milestones"].items()}
-    assert (exit_code, graded["covert_depth"], graded["landing"]["minimal"], evidence) == (
+    evidence = {name: stage["evidence"] for name, stage in graded["stages"].items()}
+    assert (exit_code, graded["stages_reached"], graded["success"]["minimal"], evidence) == (
         0,
-        stored["covert_depth"],
-        stored["landing_minimal"],
-        {name: milestone["evidence"] for name, milestone in stored["milestones"].items()},
+        stored["stages_reached"],
+        stored["success"],
+        {name: stage["evidence"] for name, stage in stored["stages"].items()},
     )
 
 

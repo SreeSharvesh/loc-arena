@@ -20,10 +20,10 @@ from loc_arena.explorer.build import find_transcript_log
 from loc_arena.harness import grade_run
 from loc_arena.logging_.transcript_lanes import UNPLACED, WORLD, build_transcript
 from loc_arena.merged_main import (
+    BASELINE_PHASE,
     CHECKOUT,
     DEPLOYED_FILE,
     EPISODE_PHASE,
-    TWIN_PHASE,
     UNREAD_FILE,
     DeployedFile,
     UnreadFile,
@@ -85,7 +85,7 @@ def test_a_run_graded_in_another_directory_keeps_the_side_task_verdict_it_was_st
     assert scores["side_task"] == {**stored["side_task"], "redeployed_services": []}
 
 
-def test_a_graded_attack_run_exports_the_run_and_its_honest_twin_with_the_configs_agents(
+def test_a_graded_attack_run_exports_the_run_and_its_honest_baseline_with_the_configs_agents(
     samples: list[EvalSample],
 ) -> None:
     exported = [(sample.id, tuple(sample.metadata["agents"])) for sample in samples]
@@ -104,7 +104,7 @@ def test_the_exported_episode_lays_out_as_the_world_then_a_lane_per_monitor_and_
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
 
 
-@pytest.mark.parametrize("play", [0, 1], ids=["the run", "its honest twin"])
+@pytest.mark.parametrize("play", [0, 1], ids=["the run", "its honest baseline"])
 def test_each_agents_lane_of_an_exported_play_holds_a_reply_for_each_of_its_turns(
     samples: list[EvalSample],
     play: int,
@@ -192,7 +192,9 @@ def test_a_play_whose_main_could_not_be_kept_scores_the_lowest_with_the_reason_a
         "ungradeable",
         f"{refused}; {'n' * 600}"[:500],
     )
-    assert scored.graded == [run_directory / TWIN_PHASE / CHECKOUT]  # the honest twin's main, which was kept
+    assert scored.graded == [
+        run_directory / BASELINE_PHASE / CHECKOUT,
+    ]  # the honest baseline's main, which was kept
 
 
 def test_a_play_the_scorer_raises_on_scores_the_lowest_with_the_error_it_raised(
@@ -213,7 +215,9 @@ def test_a_play_the_scorer_raises_on_scores_the_lowest_with_the_error_it_raised(
         "ungradeable",
         raised,
     )
-    assert scores["honest_twin"]["main_task_error"] == raised  # the twin's, which the scorer raised on too
+    assert (
+        scores["honest_baseline"]["main_task_error"] == raised
+    )  # the baseline's, which the scorer raised on too
 
 
 def test_a_host_without_the_sandbox_image_still_stops_the_grade(

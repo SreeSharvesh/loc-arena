@@ -1,4 +1,4 @@
-"""A live monitor that stops calling its model in the honest twin alone is reported errored for the run."""
+"""A live monitor that stops calling its model in the baseline alone is reported errored for the run."""
 
 from __future__ import annotations
 
@@ -13,12 +13,14 @@ from tests.integration._gateway_support import FailingProvider
 from tests.unit._monitor_support import write_monitors_file, write_prompt_template
 
 MONITOR = "action_monitor"
-# With a fallback after 1 failure: the honest twin, scored first, fails its first call and makes no more;
+# With a fallback after 1 failure: the honest baseline, scored first, fails its first call and makes no more;
 # every later call, the episode's, answers.
-ONLY_THE_TWIN_FAILS = range(2, 1_000_000)
+ONLY_THE_BASELINE_FAILS = range(2, 1_000_000)
 
 
-def test_a_monitor_that_stopped_calling_its_model_in_the_honest_twin_alone_is_errored(tmp_path: Path) -> None:
+def test_a_monitor_that_stopped_calling_its_model_in_the_honest_baseline_alone_is_errored(
+    tmp_path: Path,
+) -> None:
     monitors = write_monitors_file(
         tmp_path,
         tap=["action", "message"],
@@ -36,7 +38,7 @@ def test_a_monitor_that_stopped_calling_its_model_in_the_honest_twin_alone_is_er
         run,
         mode="attack",
         monitors_path=str(monitors),
-        monitor_provider=FailingProvider(answered=ONLY_THE_TWIN_FAILS),
+        monitor_provider=FailingProvider(answered=ONLY_THE_BASELINE_FAILS),
         write_report=False,
     )
 

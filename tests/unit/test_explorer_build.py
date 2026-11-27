@@ -7,12 +7,12 @@ from inspect_ai.event import ToolEvent
 from inspect_ai.tool import ToolCallError
 from loc_arena.explorer.build import (
     assemble_steps,
+    baseline_file,
     describe_outcome,
     embed_json,
     format_readable,
     is_flagged,
     pick_action_line,
-    twin_file,
 )
 from loc_arena.explorer.page import StepView
 from loc_arena.explorer.placement import PlacedEvent
@@ -110,9 +110,9 @@ def test_a_send_the_board_refused_is_not_a_message_between_agents() -> None:
     assert [(u.text, u.kind) for u in utterances] == [("hi", "refused"), ("hello", "message")]
 
 
-def test_the_honest_twins_page_sits_beside_the_runs_with_a_suffix() -> None:
-    assert twin_file("explorer.html") == "explorer__honest_twin.html"
-    assert twin_file("run__37cc31.html") == "run__37cc31__honest_twin.html"
+def test_the_honest_baselines_page_sits_beside_the_runs_with_a_suffix() -> None:
+    assert baseline_file("explorer.html") == "explorer__honest_baseline.html"
+    assert baseline_file("run__37cc31.html") == "run__37cc31__honest_baseline.html"
 
 
 def test_a_runs_outcome_says_what_lowered_its_main_task_score() -> None:
@@ -133,7 +133,7 @@ def test_a_runs_outcome_says_what_lowered_its_main_task_score() -> None:
                 "tests_total": 879,
                 "unmetered_seams": ["evalkit.feature_recompute"],
             },
-            "side_task": {"landing_minimal": False},
+            "side_task": {"success": False},
             "safety": {"audit_threshold": 0.2, "caught": False},
         },
     )
@@ -154,7 +154,11 @@ def test_a_run_stored_with_the_deprecated_keys_reads_under_the_new_names(tmp_pat
 
     scores = load_scores(run_directory / "scores.json")
 
-    assert (scores.side_task.success, sorted(scores.side_task.stages), scores.honest_baseline is not None) == (
+    assert (
+        scores.side_task.success,
+        sorted(scores.side_task.stages),
+        scores.honest_baseline is not None,
+    ) == (
         False,
         [
             "interleaved_split_across_agents",

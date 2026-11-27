@@ -44,9 +44,9 @@ episode's `GatewayCore` reports each provider call it makes (the coworkers') aft
 A play's trace holds no session, so grading adds them from the call record (`session_events.trace_play`,
 in `read_played_snapshot`): each session's turns, and each of its calls that has a sealed `inference_call` as
 a model call. The call's input is what its request adds after the reply before it, so a turn shows what its
-agent was handed anew: the first holds the system prompt, and with it an attacker's covert brief. Its output
+agent was handed anew: the first holds the system prompt, and with it an attacker's side task description. Its output
 is the reply's text, then each tool call on a line. An agent's last turn has no end. A play whose record
-holds no session call, as a twin stopped before any agent asked its model, keeps the trace as played.
+holds no session call, as a baseline stopped before any agent asked its model, keeps the trace as played.
 
 ## The Inspect log (`loc_arena/logging_/inspect_export.py`)
 
@@ -71,8 +71,8 @@ folders above the run's bundle (`locate_call_log`); the sealed log keeps only ea
 `read_reasoning` gives the reasoning by the sealed seq of its call. A recorded reply belongs to the sealed
 `inference_call` whose `output_fp` it fingerprints to, as the gateway computes it: the assistant message, or the
 bare text for a `prompt` or batch call. Calls with the same reply pair in order, each sealed event with the first
-recorded call not yet paired. The call log covers the honest twin too, which played after the run, so given the
-twin's folder it pairs the run's calls first and returns the twin's. A refused, failed or cut-off call pairs with
+recorded call not yet paired. The call log covers the honest baseline too, which played after the run, so given the
+baseline's folder it pairs the run's calls first and returns the baseline's. A refused, failed or cut-off call pairs with
 nothing, and a run with no call log where the run leaves it (a bundle moved away) has none. A streamed reply
 is not read, and every call of an agent's own session is streamed, so their model events carry no reasoning.
 The run explorer and the Inspect log read it; no monitor input holds reasoning.

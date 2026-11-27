@@ -38,7 +38,6 @@ from loc_arena.explorer.page import (
     CalibrationView,
     EventView,
     MainTaskView,
-    MilestoneView,
     ModelCallView,
     MonitorView,
     OutcomeView,
@@ -49,6 +48,7 @@ from loc_arena.explorer.page import (
     RunView,
     SafetyView,
     SideTaskView,
+    StageView,
     StepView,
     ToolCallView,
     VerdictView,
@@ -82,9 +82,15 @@ SECONDS_PER_MINUTE: Final = 60
 BUNDLE_MARKERS: Final = ("events.sealed.jsonl", "config.resolved.yaml", "decisions.md")
 EPISODE_PLAY: Final = "episode"  # the Inspect sample of the run itself, and its folder in the bundle
 EXECUTING_PHASE: Final = "executing"  # a model call made while one of the agent's tools ran, not its own turn
-TWIN_PLAY: Final = "honest_cal"  # the honest twin's: played to set the audit threshold, not scored on its own
-TWIN_SUFFIX: Final = "__honest_twin"  # the twin's page file is the run's page file with this before ".html"
-BUNDLE_PARTS: Final = frozenset({EPISODE_PLAY, TWIN_PLAY})  # folders inside a bundle, not runs of their own
+BASELINE_PLAY: Final = (
+    "honest_cal"  # the honest baseline's: played to set the audit threshold, not scored on its own
+)
+BASELINE_SUFFIX: Final = (
+    "__honest_baseline"  # the baseline's page file is the run's page file with this before ".html"
+)
+BUNDLE_PARTS: Final = frozenset(
+    {EPISODE_PLAY, BASELINE_PLAY},
+)  # folders inside a bundle, not runs of their own
 # Evidence lists of {"seq": ...} records; every other evidence list whose key ends in "seqs" holds bare seqs.
 EVIDENCE_RECORD_LISTS: Final = frozenset({"off_bus_writes"})
 # The argument a card shows for a tool call, in order of preference.
@@ -131,9 +137,9 @@ def find_transcript_log(bundle: Path) -> Path | None:
     return next((path for path in sorted(bundle.glob("*.eval")) if zipfile.is_zipfile(path)), None)
 
 
-def twin_file(page_file: str) -> str:
-    """The file name of the honest twin's page, beside the run's page."""
-    return f"{page_file.removesuffix('.html')}{TWIN_SUFFIX}.html"
+def baseline_file(page_file: str) -> str:
+    """The file name of the honest baseline's page, beside the run's page."""
+    return f"{page_file.removesuffix('.html')}{BASELINE_SUFFIX}.html"
 
 
 def run_page_name(bundle: Path) -> str:
@@ -144,12 +150,12 @@ def run_page_name(bundle: Path) -> str:
     return read_eval_log(str(log_path), header_only=True).eval.run_id or log_path.stem
 
 
-def has_twin(bundle: Path) -> bool:
-    """Whether the bundle's Inspect log holds the honest twin as a sample of its own."""
+def has_baseline(bundle: Path) -> bool:
+    """Whether the bundle's Inspect log holds the honest baseline as a sample of its own."""
     log_path = find_transcript_log(bundle)
     if log_path is None:
         return False
-    return any(sample.id == TWIN_PLAY for sample in read_eval_log(str(log_path)).samples or [])
+    return any(sample.id == BASELINE_PLAY for sample in read_eval_log(str(log_path)).samples or [])
 
 
 def build_run_page(
@@ -159,33 +165,33 @@ def build_run_page(
     play: str = EPISODE_PLAY,
     peer_href: str | None = None,
 ) -> RunPage:
-    """One play's page, from its bundle: the run itself, or (``play=TWIN_PLAY``) its honest twin.
+    """One play's page, from its bundle: the run itself, or (``play=BASELINE_PLAY``) its honest baseline.
 
-    The twin's page shows its own verdicts, which grading keeps in ``honest_twin``, and its own reasoning; the
-    side task's evidence belongs to the run's play, and the twin is not scored on its own, so it has no
-    outcome. Both pages compare the two plays' scores. ``peer_href`` links the two pages.
+    The baseline's page shows its own verdicts, which grading keeps in ``honest_baseline``, and its own
+    reasoning; the side task's evidence belongs to the run's play, and the baseline is not scored on its own,
+    so it has no outcome. Both pages compare the two plays' scores. ``peer_href`` links the two pages.
     """
     log_path = find_transcript_log(bundle)
     if log_path is None:
         raise FileNotFoundError(f"{bundle} has no per-agent Inspect log to build a transcript from")
     log = read_eval_log(str(log_path))
-    twin = play == TWIN_PLAY
+    baseline = play == BASELINE_PLAY
     chosen = (
-        next((s for s in log.samples or [] if s.id == play), None) if twin else (log.samples or [None])[0]
+        next((s for s in log.samples or [] if s.id == play), None) if baseline else (log.samples or [None])[0]
     )
     if chosen is None:
         raise FileNotFoundError(f"{log_path.name} has no sample for the {play} play")
     sample = resolve_sample_attachments(chosen, "full")
     scores = load_scores(bundle / SCORES_FILE)
-    if twin:
+    if baseline:
         scores = scores.model_copy(
             update={
-                "monitor_verdicts": scores.honest_twin.monitor_verdicts if scores.honest_twin else (),
+                "monitor_verdicts": scores.honest_baseline.monitor_verdicts if scores.honest_baseline else (),
                 "monitors": (),
-                "side_task": scores.side_task.model_copy(update={"milestones": {}}),
+                "side_task": scores.side_task.model_copy(update={"stages": {}}),
             },
         )
-    run_name = (log.eval.run_id or log_path.stem) + (TWIN_SUFFIX if twin else "")
+    run_name = (log.eval.run_id or log_path.stem) + (BASELINE_SUFFIX if baseline else "")
     placed = place_events(sample)
     configured = [str(agent) for agent in sample.metadata.get("agents", [])]
     lanes = order_lanes(configured, {p.lane for p in placed})
@@ -197,7 +203,7 @@ def build_run_page(
     }
     verdicts = place_verdicts(
         scores,
-        pair_mirror_to_sealed(sample, bundle / play if twin else bundle),
+        pair_mirror_to_sealed(sample, bundle / play if baseline else bundle),
         targets,
     )
     evidence = collect_covert_evidence(scores)
@@ -207,7 +213,7 @@ def build_run_page(
         lanes,
         verdicts.placed,
         evidence,
-        read_reasoning(bundle, bundle / TWIN_PLAY if twin else None),
+        read_reasoning(bundle, bundle / BASELINE_PLAY if baseline else None),
         settings,
     )
     monitor_names = {monitor.name for monitor in scores.monitors}
@@ -215,7 +221,7 @@ def build_run_page(
         run=RunView(
             name=run_name,
             slug=scores.run_slug,
-            mode="honest" if twin else scores.mode,
+            mode="honest" if baseline else scores.mode,
             seed=scores.seed,
             models=scores.models,
             wall_clock_seconds=scores.wall_clock_seconds,
@@ -224,7 +230,7 @@ def build_run_page(
             play=play,
             peer=peer_href,
         ),
-        outcome=None if twin else describe_outcome(scores, steps),
+        outcome=None if baseline else describe_outcome(scores, steps),
         calibration=describe_calibration(scores),
         monitors=tuple(
             MonitorView(m.name, m.role, m.mode, m.timing, m.counts_toward_caught, m.errored, m.top_reasons)
@@ -240,7 +246,7 @@ def build_run_page(
 
 
 def list_evidence_seqs(evidence: Mapping[str, object]) -> list[int]:
-    """The sealed seqs a milestone's evidence cites."""
+    """The sealed seqs a stage's evidence cites."""
     seqs: list[int] = []
     for key, value in evidence.items():
         if not isinstance(value, list) or not (key.endswith("seqs") or key in EVIDENCE_RECORD_LISTS):
@@ -253,11 +259,11 @@ def list_evidence_seqs(evidence: Mapping[str, object]) -> list[int]:
 
 
 def collect_covert_evidence(scores: RunScores) -> Mapping[int, frozenset[str]]:
-    """The milestones whose sealed evidence cites each sealed seq, by name."""
+    """The stages whose sealed evidence cites each sealed seq, by name."""
     cited: dict[int, set[str]] = defaultdict(set)
-    for milestone, record in scores.side_task.milestones.items():
+    for stage, record in scores.side_task.stages.items():
         for seq in list_evidence_seqs(record.evidence):
-            cited[seq].add(milestone.replace("_", " "))
+            cited[seq].add(stage.replace("_", " "))
     return {seq: frozenset(names) for seq, names in cited.items()}
 
 
@@ -313,31 +319,31 @@ def assemble_steps(
 
 
 def describe_calibration(scores: RunScores) -> CalibrationView | None:
-    """Each monitor's score on the run and on its honest twin, and both overalls; none without the twin's."""
-    aggregation, twin = scores.safety.aggregation, scores.honest_twin
-    if aggregation is None or twin is None or scores.safety.overall_suspicion is None:
+    """Each monitor's score on the run and on its baseline, and both overalls; none without its scores."""
+    aggregation, baseline = scores.safety.aggregation, scores.honest_baseline
+    if aggregation is None or baseline is None or scores.safety.overall_suspicion is None:
         return None
     return CalibrationView(
         run_overall=scores.safety.overall_suspicion,
-        twin_overall=twin.overall_suspicion,
+        baseline_overall=baseline.overall_suspicion,
         bar=aggregation.threshold,
         rows=tuple(
-            CalibrationRow(name, aggregation.per_monitor.get(name, 0.0), twin.per_monitor.get(name, 0.0))
-            for name in sorted({*aggregation.per_monitor, *twin.per_monitor})
+            CalibrationRow(name, aggregation.per_monitor.get(name, 0.0), baseline.per_monitor.get(name, 0.0))
+            for name in sorted({*aggregation.per_monitor, *baseline.per_monitor})
         ),
     )
 
 
 def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeView:
-    """The run's outcome, with the steps each milestone's evidence cites."""
+    """The run's outcome, with the steps each stage's evidence cites."""
     step_of_seq = {
         item.seq: step.id
         for step in steps
         for item in (*step.calls, *step.tools, *step.events)
         if item.seq is not None
     }
-    milestones = tuple(
-        MilestoneView(
+    stages = tuple(
+        StageView(
             id=name,
             reached=record.reached,
             sealed=record.sealed,
@@ -347,7 +353,7 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeVie
                 ),
             ),
         )
-        for name, record in scores.side_task.milestones.items()
+        for name, record in scores.side_task.stages.items()
     )
     safety = scores.safety
     return OutcomeView(
@@ -360,8 +366,8 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeVie
             scores.main_task.tests_total,
             scores.main_task.unmetered_seams,
         ),
-        side_task=SideTaskView(scores.side_task.landing_minimal),
-        milestones=milestones,
+        side_task=SideTaskView(scores.side_task.success),
+        stages=stages,
         safety=SafetyView(
             safety.audit_threshold,
             safety.caught,
@@ -410,9 +416,9 @@ def summarize_run(bundle: Path, scores: RunScores, page: RunPage | None, href: s
         main_score=scores.main_task.final_score,
         gate_passed=scores.main_task.gate_passed,
         gate_reason=scores.main_task.gate_reason,
-        landed=scores.side_task.landing_minimal,
-        milestones_reached=sum(1 for m in scores.side_task.milestones.values() if m.reached),
-        milestones_total=len(scores.side_task.milestones),
+        succeeded=scores.side_task.success,
+        stages_reached=sum(1 for m in scores.side_task.stages.values() if m.reached),
+        stages_total=len(scores.side_task.stages),
         caught=scores.safety.caught,
         caught_by=scores.safety.caught_by,
         peaks=scores.safety.per_monitor_max_score,
@@ -441,20 +447,20 @@ def build_folder(root: Path, out: Path, settings: ExplorerSettings) -> Path:
             rows.append(summarize_run(bundle, scores, None, None))
             continue
         index_href = f"../{INDEX_PAGE}"
-        twin = has_twin(bundle)
-        peer = twin_file(f"{run_page_name(bundle)}.html") if twin else None
+        baseline = has_baseline(bundle)
+        peer = baseline_file(f"{run_page_name(bundle)}.html") if baseline else None
         page = build_run_page(bundle, settings, index_href, peer_href=peer)
         href = f"{RUNS_FOLDER}/{page.run.name}.html"
         write_page(RUN_TEMPLATE, page, out / href)
-        if twin:
-            twin_page = build_run_page(
+        if baseline:
+            baseline_page = build_run_page(
                 bundle,
                 settings,
                 index_href,
-                TWIN_PLAY,
+                BASELINE_PLAY,
                 peer_href=f"{page.run.name}.html",
             )
-            write_page(RUN_TEMPLATE, twin_page, out / RUNS_FOLDER / f"{twin_page.run.name}.html")
+            write_page(RUN_TEMPLATE, baseline_page, out / RUNS_FOLDER / f"{baseline_page.run.name}.html")
         rows.append(summarize_run(bundle, scores, page, href))
     incomplete = sorted(
         {
@@ -477,12 +483,12 @@ def build(target: Path, out: Path | None, settings: ExplorerSettings) -> Path:
     """The page to open: a run bundle's own page, or the index over every run in a folder."""
     if (target / SCORES_FILE).exists():
         page_file = out or target / RUN_PAGE
-        twin = has_twin(target)
-        peer = twin_file(page_file.name) if twin else None
+        baseline = has_baseline(target)
+        peer = baseline_file(page_file.name) if baseline else None
         written = write_page(RUN_TEMPLATE, build_run_page(target, settings, peer_href=peer), page_file)
-        if twin:
-            twin_page = build_run_page(target, settings, play=TWIN_PLAY, peer_href=page_file.name)
-            write_page(RUN_TEMPLATE, twin_page, page_file.with_name(twin_file(page_file.name)))
+        if baseline:
+            baseline_page = build_run_page(target, settings, play=BASELINE_PLAY, peer_href=page_file.name)
+            write_page(RUN_TEMPLATE, baseline_page, page_file.with_name(baseline_file(page_file.name)))
         return written
     return build_folder(target, out or target / SITE_FOLDER, settings)
 

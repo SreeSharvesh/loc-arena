@@ -44,7 +44,7 @@ def reading(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def test_a_reading_opens_with_the_facts_and_holds_the_readers_account(reading: Path) -> None:
-    head, _, account = reading.read_text().partition("\n- Twin verdicts:")
+    head, _, account = reading.read_text().partition("\n- Baseline verdicts:")
 
     assert head.startswith("## Facts counted from the records")
     assert len(account.split()) > 100
