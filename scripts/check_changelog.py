@@ -175,17 +175,23 @@ def order_problems(releases: list[Release]) -> list[str]:
     return problems
 
 
-def history_problems(releases: list[Release], merged: list[int], pull_request: int | None) -> list[str]:
+def history_problems(
+    releases: list[Release],
+    merged: list[int],
+    pull_request: int | None,
+    stacked_on: list[int],
+) -> list[str]:
     """Compare the releases with main's merged pull requests, newest first."""
     problems = []
     if pull_request is not None and pull_request not in merged and releases[0].number != pull_request:
         problems.append(f"pull request {pull_request} has no release; {HOW_TO_ADD}.")
     for position, release in enumerate(releases):
         mine = position == 0 and pull_request in (None, release.number)
-        if release.number not in merged and not mine:
+        if release.number not in merged and release.number not in stacked_on and not mine:
             problems.append(
                 f"line {release.row}: {release.number} is not a pull request merged into main; "
-                "only the top release may name the pull request being merged; fetch main if it merged since.",
+                "only the top release may name the pull request being merged; fetch main if it merged since, "
+                "or name the branch a stacked pull request targets with --base.",
             )
     return problems + missing_releases(releases, merged)
 
@@ -219,6 +225,12 @@ def read_merged(main: str) -> list[int]:
     return [int(match[1] or match[2]) for match in found if match]
 
 
+def read_base_releases(base: str, file: Path) -> list[int]:
+    """Read the releases a pull request's target branch holds: a stacked one sits on unmerged releases."""
+    held = subprocess.check_output(["git", "show", f"{base}:{file.as_posix()}"])
+    return [release.number for release in read_releases(held.decode("utf-8"))[0]]
+
+
 def part_history(releases: list[Release], part: str) -> list[str]:
     """List one part's lines, newest first, each with its release."""
     return [
@@ -235,6 +247,7 @@ def main() -> int:
     parser.add_argument("--file", type=Path, default=Path("CHANGELOG.md"))
     parser.add_argument("--main", default="origin/main", help="the ref of main; defaults to origin/main")
     parser.add_argument("--pull-request", type=int, help="the pull request under check")
+    parser.add_argument("--base", help="a stacked pull request's target; its releases need not be merged")
     parser.add_argument("--part", help="print this part's lines, newest first, and check nothing")
     arguments = parser.parse_args()
     releases, problems = read_releases(arguments.file.read_text(encoding="utf-8"))
@@ -247,7 +260,8 @@ def main() -> int:
         problems.extend(order_problems(releases))
         merged = read_merged(arguments.main)
         if merged:
-            problems.extend(history_problems(releases, merged, arguments.pull_request))
+            stacked_on = read_base_releases(arguments.base, arguments.file) if arguments.base else []
+            problems.extend(history_problems(releases, merged, arguments.pull_request, stacked_on))
         elif arguments.pull_request is not None:
             problems.append(
                 f"no merged pull request found from {arguments.main}; fetch main's whole history.",

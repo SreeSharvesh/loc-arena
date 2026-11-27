@@ -35,7 +35,9 @@ the wrong set of files.
 
 `make gates` runs `python3 scripts/check_changelog.py`, which checks `CHANGELOG.md` against the format in its
 head and against the pull requests merged into main, and names the line to change. In CI the pull request under
-check must hold the top release (`CHANGELOG_PULL_REQUEST`).
+check must hold the top release (`CHANGELOG_PULL_REQUEST`). A stacked pull request also holds the releases of the
+pull requests under it, not merged yet: the check accepts those its target branch holds (`--base`, which
+`make gates` gives the file-size rule's base), and each of them answers to the check in its own pull request.
 
 ## CodeRabbit must return a clean latest-commit review
 
