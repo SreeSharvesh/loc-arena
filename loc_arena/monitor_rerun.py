@@ -1,4 +1,4 @@
-"""A stored run's monitors run again, behind ``make monitor``.
+"""A played run's monitors run again, behind ``make monitor``.
 
 A monitor, or a prompt of one, is compared on runs already played: this runs the monitors it is given, enabled
 or not, over each play's mirror events, and writes what they scored and what they cost into a folder of its
@@ -22,6 +22,7 @@ from loc_arena.config import ConfigError, RunConfig
 from loc_arena.gateway.core import OpenRouterProvider, is_live_provider_configured
 from loc_arena.harness import build_monitor_caller
 from loc_arena.logging_.events import AppendOnlyLog, fingerprint, read_events
+from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
 from loc_arena.monitors.aggregation import load_aggregation_config, reduce_monitor
 from loc_arena.monitors.registry import (
     MonitorSpec,
@@ -31,8 +32,7 @@ from loc_arena.monitors.registry import (
     run_monitors,
 )
 from loc_arena.protocol import monitor_context
-from loc_arena.run_facts import name_plays
-from loc_arena.task import read_snapshot_file
+from loc_arena.task import SNAPSHOT_FILE, read_snapshot_file
 
 SCORES_FILE = "scores.json"
 VERDICTS_FILE = "verdicts.jsonl"
@@ -101,17 +101,21 @@ def rerun_monitors(
     monitors_path: Path,
     provider: Any = None,
 ) -> Rerun:
-    """Run the monitors ``names`` over each play of the graded run in ``run_directory``; write into ``out``.
+    """Run the monitors ``names`` over each finished play of the run in ``run_directory``; write into ``out``.
 
-    Without a ``provider``, the monitors call the gateway or the key this process has; with neither, each
-    scores as it does without a model. Raises ``ConfigError`` on a name ``monitors_path`` does not declare,
-    and ``FileExistsError`` on an ``out`` that holds anything: the run's own folder, whose ``scores.json`` it
-    would replace, or an earlier re-run's, whose recorded calls it would count as its own.
+    The run need not be graded: a play is read from its own folder. Without a ``provider``, the monitors
+    call the gateway or the key this process has; with neither, each scores as it does without a model.
+    Raises ``ConfigError`` on a name ``monitors_path`` does not declare, ``FileNotFoundError`` on a run with
+    no finished play, and ``FileExistsError`` on an ``out`` that holds anything: the run's own folder, whose
+    ``scores.json`` it would replace, or an earlier re-run's, whose recorded calls it would count as its own.
     """
     specs = {spec.name: spec for spec in load_monitor_specs(monitors_path, config.scenario)}
     if unknown := sorted(set(names) - set(specs)):
         raise ConfigError(f"{monitors_path} declares no monitor named {', '.join(unknown)}")
     chosen = [specs[name] for name in dict.fromkeys(names)]
+    plays = find_plays(run_directory)
+    if not plays:
+        raise FileNotFoundError(f"{run_directory} holds no finished play: none has a {SNAPSHOT_FILE}")
     if out.exists() and any(out.iterdir()):
         raise FileExistsError(f"{out} is not empty: a re-run writes into a folder of its own")
     if provider is None and is_live_provider_configured():
@@ -120,7 +124,6 @@ def rerun_monitors(
             model_providers=config.model_providers,
         )
     out.mkdir(parents=True, exist_ok=True)
-    plays = name_plays(run_directory)
 
     def score(play: tuple[str, str]) -> list[MonitorVerdict]:
         record = out / f"{play[0]}.events.jsonl"
@@ -162,6 +165,21 @@ def rerun_monitors(
     ]
     (out / VERDICTS_FILE).write_text("".join(f"{line}\n" for line in lines))
     return rerun
+
+
+def find_plays(run_directory: Path) -> list[tuple[str, str]]:
+    """Each finished play's name and folder: the run's own play by its mode, and ``twin`` for its twin.
+
+    A play is finished once it has written its snapshot, which says its mode and where its mirror log is.
+    A run stopped early has a play without one, and that play is left out. Nothing here reads the run's
+    ``scores.json``, so a run that was never graded is read like any other.
+    """
+    plays: list[tuple[str, str]] = []
+    for phase in (EPISODE_PHASE, TWIN_PHASE):
+        if (run_directory / phase / SNAPSHOT_FILE).is_file():
+            mode = read_snapshot_file(run_directory / phase).mode
+            plays.append((mode if phase == EPISODE_PHASE else "twin", phase))
+    return plays
 
 
 def _score_play(

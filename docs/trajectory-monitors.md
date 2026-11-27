@@ -66,6 +66,11 @@ make monitor RUN_DIR=<run> MONITORS=action_monitor RUN=aurora-efficiency.fast OU
 play's mirror events, the run's own and its honest twin's, and runs those monitors over them. It needs
 `OPENROUTER_API_KEY`, as grading does; without it a monitor scores as it does without a model.
 
+The run need not be graded. A play is read from its own folder, `episode/` or `honest_cal/`, by the
+`snapshot.json` it wrote when it finished, so a run with no `scores.json` is read like any other. A play that
+never finished, as the twin of a run stopped early, has no snapshot and is left out; a run with no finished
+play is refused.
+
 It changes nothing of the run. The monitors' model calls go through a gateway core that records them in the
 output folder, never in the run's sealed log, and no task is graded again. It writes into `OUT`, by default
 `extras/monitors-<time>/` in the run directory, and refuses a folder that holds anything: the run's own, whose

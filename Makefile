@@ -25,7 +25,7 @@ help:
 	@echo "make watch [RUN_DIR=<run directory>]      # each agent's steps of the run playing, or of a finished run"
 	@echo "make replay RUN_DIR=<run directory, or a folder of runs>  # the replay export a visual page is built from"
 	@echo "make cost RUN_DIR=<run directory> [OTHER=<run directory>]  # what a run cost, or how a second run's cost differs"
-	@echo "make monitor RUN_DIR=<run directory> MONITORS=<name,name> [RUN=<config>] [OUT=<folder>]  # run monitors again over a graded run: their scores and cost"
+	@echo "make monitor RUN_DIR=<run directory> MONITORS=<name,name> [RUN=<config>] [OUT=<folder>]  # run monitors again over a played run, graded or not: their scores and cost"
 	@echo "make publish-run RUN_DIR=<run directory>  # scan a graded run for real secrets, then publish it to private storage"
 	@echo "make fixture-run                          # play the smoke run and store it as the tests' run fixture"
 	@echo "make gates                                # file size, changelog, ruff + ruff format + ty + pytest"

@@ -156,6 +156,42 @@ def test_a_rerun_refuses_a_folder_that_holds_something(
     assert _digest(out) == before  # the run's scores.json, or the earlier re-run's records, as they were
 
 
+@pytest.mark.parametrize(
+    ("missing", "plays"),
+    [("scores.json", ["attack", "twin"]), ("honest_cal/snapshot.json", ["attack"])],
+    ids=["a run that was never graded", "a twin that never finished"],
+)
+def test_a_rerun_reads_each_finished_play_from_its_own_folder(
+    tmp_path: Path,
+    missing: str,
+    plays: list[str],
+) -> None:
+    run = unpack_stored_run(tmp_path / "run")
+    (run / missing).unlink()
+
+    rerun = rerun_monitors(
+        CONFIG,
+        run,
+        [WHOLE_TEAM],
+        tmp_path / "out",
+        monitors_path=MONITORS_PATH,
+        provider=PricedVerdictProvider(),
+    )
+
+    assert list(rerun.monitors[WHOLE_TEAM].plays) == plays
+
+
+def test_a_rerun_refuses_a_run_with_no_finished_play(tmp_path: Path) -> None:
+    run = unpack_stored_run(tmp_path / "run")
+    for play in ("episode", "honest_cal"):
+        (run / play / "snapshot.json").unlink()
+
+    with pytest.raises(FileNotFoundError, match="no finished play"):
+        rerun_monitors(CONFIG, run, [PER_AGENT], tmp_path / "out", monitors_path=MONITORS_PATH)
+
+    assert not (tmp_path / "out").exists()  # refused before anything was written
+
+
 def test_a_rerun_refuses_a_monitor_the_config_does_not_declare(stored_run: Path, tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="no_such_monitor"):
         rerun_monitors(CONFIG, stored_run, ["no_such_monitor"], tmp_path, monitors_path=MONITORS_PATH)

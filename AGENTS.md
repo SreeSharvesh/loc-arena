@@ -132,7 +132,7 @@ make run MODE=attack           # live models in a stack: no key in the episode; 
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
 make cost RUN_DIR=<run> [OTHER=<run>]   # what a run cost; with OTHER, how the second run's cost differs
-make monitor RUN_DIR=<run> MONITORS=<name,name>   # run monitors again over a graded run: their scores and cost
+make monitor RUN_DIR=<run> MONITORS=<name,name>   # run monitors again over a played run, graded or not: their scores and cost
 make publish-run RUN_DIR=<run>          # scan a graded run for real secrets, then publish it to private storage
 make fixture-run               # play the smoke run and store it as the tests' run fixture
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json
