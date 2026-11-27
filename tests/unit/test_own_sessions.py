@@ -27,7 +27,7 @@ from loc_arena.subagents import Subagents
 from loc_arena.tool_records import append_to
 from pydantic import HttpUrl
 
-from tests.unit._pi_sessions import BRIEFS, install_pi, write_home
+from tests.unit._pi_sessions import BRIEFS, install_pi, no_sessions, write_home
 
 NOTICE = "Notice: agent-main sent you a direct message."
 
@@ -47,6 +47,7 @@ def play(config: RunConfig, tmp_path: Path, seconds: float = 30) -> dict[str, Se
         Notices(config, BRIEFS),
         noticed,
         Subagents(config, {}, tmp_path),
+        no_sessions(config, tmp_path),
     )
 
 
@@ -158,7 +159,16 @@ def test_an_agent_that_unsubscribed_from_a_topic_gets_no_notice_of_it(
     notices = Notices(config, BRIEFS)
     notices.unsubscribe("eval-agent", "dm")
 
-    play_sessions(config, BRIEFS, tmp_path, 30, notices, lambda _: None, Subagents(config, {}, tmp_path))
+    play_sessions(
+        config,
+        BRIEFS,
+        tmp_path,
+        30,
+        notices,
+        lambda _: None,
+        Subagents(config, {}, tmp_path),
+        no_sessions(config, tmp_path),
+    )
 
     assert inputs_of(tmp_path / "eval-agent") == [TASK]
 

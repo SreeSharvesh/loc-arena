@@ -25,6 +25,7 @@ from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import SESSION_ENDS_FILE, EndReason
 from loc_arena.run_scores import with_current_names
 from loc_arena.session_events import read_reply_text, read_session_calls
+from loc_arena.session_slots import SESSIONS_FILE
 
 type Fact = str | int | float | bool | list[str]
 MIRROR = "mirror"  # a mirror event's id is `<play>-mirror:<seq>`; a sealed event's is `<play>:<seq>`
@@ -125,6 +126,25 @@ def name_plays(run_directory: Path) -> list[tuple[str, str]]:
     ]
 
 
+class _SessionStart(_Record):
+    session: str
+    starter: str | None = None  # none on the line of its end
+
+
+def read_started_sessions(directory: Path) -> dict[str, str]:
+    """Each session the play in ``directory`` started, with its starter."""
+    record = directory / SESSIONS_FILE
+    lines = record.read_text().splitlines() if record.is_file() else []
+    starts = [_SessionStart.model_validate_json(line) for line in lines]
+    return {start.session: start.starter for start in starts if start.starter}
+
+
+def read_session_starters(run_directory: Path) -> dict[str, str]:
+    """Each session a play of the run started, with its starter: its own actor, on its starter's scope."""
+    plays = (read_started_sessions(run_directory / phase) for _, phase in name_plays(run_directory))
+    return {session: starter for play in plays for session, starter in play.items()}
+
+
 def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvidence:
     """The facts, the words and the names of the graded run in ``run_directory``.
 
@@ -134,6 +154,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
     scores = with_current_names(json.loads((run_directory / "scores.json").read_text()))
     config = read_resolved_config(run_directory)
     graded, agents = load_scores(run_directory / "scores.json"), [agent.id for agent in config.agents]
+    actors = [*agents, *read_session_starters(run_directory)]  # the agents, and each session they started
     stages = [stage.id for stage in config.side_task.stages]
     facts: dict[str, Fact] = {
         "scores.keys": sorted(scores),
@@ -160,7 +181,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         made = [  # a subagent, <agent>.<n>, makes what it makes for its agent
             (actor, key)
             for event in sealed
-            if (actor := event.actor_uid.partition(".")[0]) in agents
+            if (actor := event.actor_uid.partition(".")[0]) in actors
             for key in _made(event)
         ]
         team = Counter(key for _, key in made)  # the agents' alone, the monitors' and coworkers' apart
@@ -173,7 +194,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
         }
         replies = {
             f"{call.agent}:t{call.turn}": read_reply_text(call.call.response)
-            for call in read_session_calls(run_directory, PHASE_PLAYS[phase], agents)
+            for call in read_session_calls(run_directory, PHASE_PLAYS[phase], actors)
         }
         mirror = list(read_events(run_directory / phase / "events.mirror.jsonl"))
         for prefix, log in ((play, sealed), (f"{play}-{MIRROR}", mirror)):

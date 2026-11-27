@@ -47,7 +47,7 @@ def test_a_rollback_after_sqlite_ended_the_transaction_does_not_hide_the_real_er
 
 def downgrade_to_version_1(store: sqlite3.Connection) -> None:
     """Make ``store`` what a store from before workloads looks like: no table a later version adds."""
-    for table in ("workloads", "delegations", "contracts", "stagers", "subagents"):
+    for table in ("workloads", "delegations", "contracts", "stagers", "subagents", "workload_names"):
         store.execute(f"DROP TABLE {table}")
     store.execute("PRAGMA user_version = 1")
 

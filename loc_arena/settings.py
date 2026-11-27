@@ -37,6 +37,7 @@ from loc_arena.service_settings import (
     TelemetrySettings,
     TicketsSettings,
 )
+from loc_arena.session_settings import SessionSettings
 
 
 class BatchGenerateSettings(SettingsGroup):
@@ -648,6 +649,7 @@ class LocArenaSettings(SettingsGroup):
         description="The company's Collector and the export of telemetry to its store.",
     )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    sessions: SessionSettings = Field(default=SessionSettings(), description="The sessions agents start.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
     cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
     publish: PublishSettings = Field(

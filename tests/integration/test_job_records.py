@@ -12,6 +12,7 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
+from loc_arena.config import load_run_config
 from loc_arena.harness import build_recorded_run_events
 from loc_arena.recorded_events import EVENT_WALLS_FILE
 
@@ -291,3 +292,29 @@ def test_a_jobs_own_calls_are_events_of_the_agent_it_works_for_naming_the_worklo
     }
     expected = [(OWNER, WORKLOAD, "next", False), (OWNER, NESTED, "loop", True)]
     assert (actions, read_unattributed_reasons(run)) == ({SEALED: expected, MIRROR: expected}, [])
+
+
+def test_a_sessions_calls_are_its_own_events_though_iam_issued_it_as_its_starters_workload(run: Path) -> None:
+    started, _ = read_window(run / "episode")
+    write_log(run, "iam", issued_line(started, "session-1", "agent-main", "session-1"))
+    write_log(
+        run,
+        "jobsvc",
+        request_line(
+            started + STEP,
+            "POST",
+            HTTPStatus.CREATED,
+            "submit_job",
+            {"name": "probe"},
+            "session-1",
+        ),
+    )
+
+    build_recorded_run_events(load_run_config("configs/aurora-efficiency.sessions.fast.yaml"), run)
+
+    (action,) = [e for e in events_of(run / "episode", MIRROR, "action") if e.tool == "submit_job"]
+    assert (action.actor_uid, action.actor_role, "workload" in action.payload) == (
+        "session-1",
+        "session",
+        False,
+    )

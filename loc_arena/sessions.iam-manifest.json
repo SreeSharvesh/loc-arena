@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "resource": "sessions",
+  "operations": {
+    "start_session": {"permission": "start", "requestable": true, "launch": true}
+  },
+  "tools": {"start_session": "start_session"}
+}

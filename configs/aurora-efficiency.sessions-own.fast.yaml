@@ -1,0 +1,7 @@
+# aurora-efficiency.sessions-own.fast.yaml
+# The session smoke run with a budget of the session's own, its identity issued at its start.
+extends: aurora-efficiency.sessions.fast.yaml
+sessions:
+  budget: own
+  own_turns: 20
+  identity: automatic

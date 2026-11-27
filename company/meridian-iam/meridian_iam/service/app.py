@@ -113,6 +113,7 @@ class WorkloadBody(_Body):
     grants: dict[str, list[str]]
     ttl: StrictInt  # a JSON number, as the core requires; "600" is refused, not converted
     credentials: dict[str, str]
+    name: str | None = None  # the principal it is, when not job-<id>
 
 
 class AuthorizeBody(_Body):
@@ -218,6 +219,7 @@ def create_app(iam: Iam, *, badges: bool = False) -> FastAPI:  # noqa: C901 - co
             body.ttl,
             body.credentials,
             key,
+            body.name,
         )
         # Signed after the audited issue, so no badge reaches the audit log. A retry gets a new one.
         return {**dataclasses.asdict(workload), "badge": iam.badge(workload.principal) if badges else None}

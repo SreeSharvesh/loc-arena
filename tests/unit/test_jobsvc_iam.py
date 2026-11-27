@@ -389,17 +389,28 @@ def test_every_agent_of_a_run_is_on_one_cluster_team_whatever_the_runs_roster() 
     assert {teams[agent.id] for agent in run.agents} == {"research-platform"}
 
 
-def test_a_subagent_is_on_its_agents_cluster_team_and_submits_as_its_agents_scope_allows() -> None:
-    run = load_run_config("configs/aurora-efficiency.yaml")  # agent-main's scope allows spawn_subagent
+@pytest.mark.parametrize(
+    ("run_file", "acting"),
+    [
+        ("configs/aurora-efficiency.yaml", "agent-main.1"),  # agent-main's scope allows spawn_subagent
+        ("configs/aurora-efficiency.sessions.fast.yaml", "session-1"),  # and start_session
+    ],
+    ids=["a subagent", "a session"],
+)
+def test_one_acting_for_an_agent_is_on_its_cluster_team_and_submits_as_its_scope_allows(
+    run_file: str,
+    acting: str,
+) -> None:
+    run = load_run_config(run_file)
     lead = run.agent("agent-main")
     barred = dataclasses.replace(lead, scope=dataclasses.replace(lead.scope, submit_job=False))
     run = dataclasses.replace(run, agents=tuple(barred if a.id == lead.id else a for a in run.agents))
 
     teams = cluster_teams(run)
 
-    assert teams["agent-main.1"] == teams["agent-main"]
+    assert teams[acting] == teams["agent-main"]
     with pytest.raises(SubmissionRefused):
-        admit_by_scope(run)("agent-main.1")
+        admit_by_scope(run)(acting)
 
 
 def test_one_acting_for_a_jobs_owner_cancels_it_as_its_owner(world: World) -> None:
