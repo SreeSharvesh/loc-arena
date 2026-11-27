@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [459] - 2026-11-28: Six comments say what the code beside them does
+
+### Changed
+
+- The repository's comments on the stack slots, the built images, the cost file, the publish and a node's limits match the code, which changes nothing a run does.
+
 ## [458] - 2026-11-28: The repository drops a duplicate run script
 
 ### Removed

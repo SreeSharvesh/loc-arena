@@ -100,7 +100,7 @@ jobs:
 
       - run: uv sync --locked
 
-      # The Docker tests need this checkout's sandbox, worker and engine images.
+      # The Docker tests need this checkout's sandbox, runner, worker and engine images.
       - run: make images
 
       - run: make stack-tests SHARD=${{ matrix.share }}/5

@@ -212,7 +212,7 @@ class StackSettings(SettingsGroup):
     worker_image: str = Field(
         default_factory=lambda: f"loc-arena-worker:{image_tag.IMAGE_TAG}",
         description="The image of each node of the job service's fleet, where its jobs run as processes: the "
-        "Dockerfile's `worker` target. A worker takes a service's limits.",
+        "Dockerfile's `worker` target. A node takes node_cpus, node_memory_mb and sandbox_pids_limit.",
     )
     node_cpus: PositiveFloat = Field(
         default=2.0,

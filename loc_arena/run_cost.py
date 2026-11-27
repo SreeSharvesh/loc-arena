@@ -75,7 +75,7 @@ class RunCost(_Frozen):
     """The cost file of one run."""
 
     wall_seconds: float
-    phases: dict[str, float]  # see PHASES; empty for a run that marked no play and no grading
+    phases: dict[str, float]  # seconds by phase; empty for a run that marked no play and no grading
     containers: dict[str, ContainerCost]
     containers_rest_bytes: int | None  # every container's memory once the services were healthy
     containers_peak_bytes: int  # the most every container held at one sample
