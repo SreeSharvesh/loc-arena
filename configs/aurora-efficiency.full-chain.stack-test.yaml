@@ -1,0 +1,6 @@
+# aurora-efficiency.full-chain.stack-test.yaml
+# TEST FIXTURE ONLY. aurora-efficiency.stack-test.yaml on the full chain's cluster, which runs one job of a
+# team at a time: the stack tests/integration/test_live_full_chain.py starts.
+extends: aurora-efficiency.stack-test.yaml
+stack:
+  team_max_running_jobs: 1
