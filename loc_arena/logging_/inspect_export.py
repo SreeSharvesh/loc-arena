@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -173,13 +174,14 @@ def _sample_events(
             call = calls.get(event.seq)
             if event.kind == "inference_call" and call is not None:
                 now = _timestamp(call.wall_ts)
-                events.append(_model_event(call, span_id))
+                events.append(_model_event(call, span_id, mirror_seq=mirror_seqs.get(event.seq)))
             elif event.kind == "action":
                 events.append(_tool_event(event, span_id, now, mirror_seq=mirror_seqs.get(event.seq)))
             else:
                 events.append(_info_event(event, span_id, now, mirror_seq=mirror_seqs.get(event.seq)))
         if lane is not None:
-            now = _timestamp(turn_records[lane].wall_end)
+            end = turn_records[lane].wall_end
+            now = _timestamp(end) if math.isfinite(end) else now
             events.append(SpanEndEvent(id=_turn_span_id(lane), timestamp=now))
     events.extend(SpanEndEvent(id=_agent_span_id(uid), timestamp=now) for uid in opened_agents)
     events.append(SpanEndEvent(id=root_id, timestamp=now))
@@ -242,7 +244,7 @@ def _turn_span_id(ref: TurnRef) -> str:
     return f"turn:{ref.agent_uid}:{ref.turn}"
 
 
-def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
+def _model_event(call: ModelCall, span_id: str | None, *, mirror_seq: int | None) -> ModelEvent:
     at = _timestamp(call.wall_ts)
     return ModelEvent(
         model=call.role,
@@ -255,7 +257,12 @@ def _model_event(call: ModelCall, span_id: str | None) -> ModelEvent:
         span_id=span_id,
         timestamp=at,
         completed=at,
-        metadata={"identity": call.identity, "phase": call.phase, "sealed_seq": call.sealed_seq},
+        metadata={
+            "identity": call.identity,
+            "phase": call.phase,
+            "sealed_seq": call.sealed_seq,
+            "mirror_seq": mirror_seq,
+        },
     )
 
 

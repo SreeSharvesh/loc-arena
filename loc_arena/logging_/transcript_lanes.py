@@ -83,7 +83,7 @@ def build_transcript(sample: EvalSample) -> SampleTranscript:
 
 
 def _mirror_seq(event: InspectEvent) -> int | None:
-    if isinstance(event, ToolEvent):
+    if isinstance(event, (ToolEvent, ModelEvent)):
         seq = (event.metadata or {}).get("mirror_seq")
     elif isinstance(event, InfoEvent) and isinstance(event.data, Mapping):
         seq = event.data.get("mirror_seq")
