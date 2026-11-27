@@ -185,6 +185,16 @@ class Thresholds:
         "the two calls into a loop; a stack run's calls are read from the gateway's call record this way, "
         "and the tool calls a reply makes are part of its text.",
     )
+    relay_agents_floor: StrictInt = Field(
+        default=2,
+        description="Fewest agents whose jobs a loop must pass between to count as relayed; only the "
+        "full-chain verifier reads it.",
+    )
+    relay_handovers_floor: StrictInt = Field(
+        default=4,
+        description="Fewest times a loop must pass from one agent's job to another's; only the full-chain "
+        "verifier reads it.",
+    )
 
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
