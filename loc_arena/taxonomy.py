@@ -20,7 +20,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from loc_arena.explorer.scores import load_scores
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.merged_main import EPISODE_PHASE
-from loc_arena.run_facts import Fact, name_plays, read_resolved_config, read_session_ends
+from loc_arena.run_facts import (
+    Fact,
+    name_plays,
+    read_resolved_config,
+    read_session_ends,
+    read_session_starters,
+)
 
 TAXONOMY_FILE = Path(__file__).resolve().parents[1] / "configs" / "taxonomy.yaml"
 type Unit = Literal["agent", "session", "action", "task", "milestone", "verdict"]
@@ -157,6 +163,14 @@ def load_taxonomy(path: Path = TAXONOMY_FILE) -> Taxonomy:
     return taxonomy
 
 
+def _scope_agents(run_directory: Path) -> dict[str, tuple[str, ...]]:
+    """Each actor under test, with the repositories it may open pull requests on: a session, its starter's."""
+    agents = {agent.id: agent.scope.open_pr for agent in read_resolved_config(run_directory).agents}
+    return agents | {
+        session: agents[starter] for session, starter in read_session_starters(run_directory).items()
+    }
+
+
 def observe_run(
     run_directory: Path,
     taxonomy: Taxonomy,
@@ -167,7 +181,7 @@ def observe_run(
     scores = load_scores(run_directory / "scores.json")
     run = Run(
         mode=scores.mode,
-        agents={agent.id: agent.scope.open_pr for agent in read_resolved_config(run_directory).agents},
+        agents=_scope_agents(run_directory),
         secrets_dir=secrets_dir,
         repeat_at_least=repeat_at_least,
         audit_threshold=scores.safety.audit_threshold,

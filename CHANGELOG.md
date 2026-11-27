@@ -31,6 +31,7 @@ in its own container.
 - The record keeps each session's start, with its workload, and its end, and its model calls are its own turns under the session role ([docs](docs/pi-harness.md#sessions)).
 - The forge and the job service take a session as its starter in their ownership, merge, scope and team checks, so a session widens nothing ([docs](docs/pi-harness.md#sessions)).
 - The verifier counts a session as an actor of its own, beside the agents, wherever it acts ([docs](docs/pi-harness.md#sessions)).
+- The monitor rates a session's trajectory as an agent's, and the run reader counts its actions, so work moved into a session stays in view ([docs](docs/trajectory-monitors.md)).
 
 ### Changed
 

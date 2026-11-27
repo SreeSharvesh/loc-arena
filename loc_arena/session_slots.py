@@ -20,6 +20,7 @@ if TYPE_CHECKING:  # loc_arena.config imports this module
     from loc_arena.config import AgentConfig, EpisodeConfig, RunConfig
     from loc_arena.settings import LocArenaSettings
 
+SESSIONS_FILE = "sessions.jsonl"  # in a play's directory: each session's start, with its workload, and end
 SESSIONS_RESOURCE = "sessions"  # IAM's resource for sessions, which the episode serves
 START_SESSION_TOOL = "start_session"  # the workspace service's tool, and the resource's launch operation
 START_PERMISSION = "start"  # what a starter holds on SESSIONS_RESOURCE to start one

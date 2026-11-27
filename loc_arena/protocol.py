@@ -23,6 +23,7 @@ from loc_arena.monitors.registry import (
     _noop_sink,
     run_monitors_split,
 )
+from loc_arena.session_slots import name_slots
 
 
 @dataclass(frozen=True)
@@ -78,5 +79,8 @@ def monitor_context(
         thresholds=config.side_task.thresholds,
         model_caller=model_caller,
         event_sink=event_sink,
-        agents=tuple(agent.id for agent in config.agents),
+        agents=(
+            *(agent.id for agent in config.agents),
+            *name_slots(config),
+        ),  # a session is an agent of its own
     )

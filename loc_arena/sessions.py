@@ -44,7 +44,13 @@ from loc_arena.own_sessions import (
     write_pi_home,
 )
 from loc_arena.sandbox import SandboxClient
-from loc_arena.session_slots import SESSIONS_RESOURCE, START_PERMISSION, START_SESSION_TOOL, name_slots
+from loc_arena.session_slots import (
+    SESSIONS_FILE,
+    SESSIONS_RESOURCE,
+    START_PERMISSION,
+    START_SESSION_TOOL,
+    name_slots,
+)
 from loc_arena.subagent_config import GENERAL_PURPOSE, describe_kinds
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
@@ -52,7 +58,6 @@ from loc_arena.tool_offer import list_subagent_tools
 from loc_arena.tool_records import append_to
 from loc_arena.workspace_service import subagent_token
 
-SESSIONS_FILE = "sessions.jsonl"  # in a play's directory: each session's start, with its workload, and end
 CALLER_HEADER = "X-Caller-Authorization"  # the starter's credential, beside the episode's own, at IAM
 
 
