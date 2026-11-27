@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [444] - 2026-11-28: Both audit thresholds come from one nearest-rank rule
+
+### Changed
+
+- The engine computes the per-event and the overall audit threshold with one function, which changes nothing a reader of the arena would notice ([docs](docs/trajectory-monitors.md)).
+
 ## [443] - 2026-11-28: The engine drops a safety report nothing computed
 
 ### Removed
