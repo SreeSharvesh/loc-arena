@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [453] - 2026-11-28: A run's bundle names the seed its play used
+
+### Fixed
+
+- The run command drops `--seed`, which labelled the bundle with a seed the play never used; a run's seed is its config's ([docs](docs/run-config.md)).
+
 ## [452] - 2026-11-28: The model gateway drops a transport nothing used
 
 ### Removed

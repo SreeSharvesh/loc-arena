@@ -321,14 +321,13 @@ def grade_run(
     run_directory: Path,
     *,
     mode: str,
-    seed: int | None = None,
     monitors_path: str = MONITORS_FILE,
     write_report: bool = True,
     monitor_provider: Any = None,
 ) -> Path:
     """Grade what ``play_run`` left in ``run_directory``, replay the monitors, and write the bundle there.
 
-    ``mode`` and ``seed`` come from the caller, never from the played files. The run is named after its
+    ``mode`` comes from the caller, never from the played files. The run is named after its
     directory. Without a ``monitor_provider``, the monitors call the gateway or the key this process has;
     with neither, they score with their heuristic.
     """
@@ -338,7 +337,6 @@ def grade_run(
             timeout=cfg.settings.gateway.timeout_seconds,
             model_providers=cfg.model_providers,
         )
-    the_seed = seed if seed is not None else cfg.seed
     run_name = run_directory.name
     played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())
 
@@ -414,7 +412,7 @@ def grade_run(
         cfg,
         mode,
         run_name,
-        the_seed,
+        cfg.seed,
         wall_clock,
         episode,
         ep_rec,
@@ -442,7 +440,7 @@ def grade_run(
         run_name,
         scores,
         episode,
-        the_seed,
+        cfg.seed,
         mode,
         threshold,
         write_report=write_report,

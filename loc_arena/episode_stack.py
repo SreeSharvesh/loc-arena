@@ -502,7 +502,7 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
     return render_healthcheck(test or probe, stack)
 
 
-def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_id: str) -> Path:
+def run_in_stack(run: str, *, mode: str, logs: Path, instance_id: str) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
     The episode container plays the episode and, after ``renew_services``, its baseline (``play_phases``).
@@ -578,7 +578,6 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_
             sandbox_agent_code(config),
             run_directory,
             mode=mode,
-            seed=seed,
             monitor_provider=model_gateway.build_monitor_provider(config, compose, host_token),
         )
     except SpansNotExportedError:
