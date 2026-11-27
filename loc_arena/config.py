@@ -43,6 +43,7 @@ from loc_arena.ids import PermissionScope
 from loc_arena.model_preferences import ProviderPreferences, ReasoningPreferences
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
+from loc_arena.session_slots import find_session_problem
 from loc_arena.settings import LocArenaSettings
 from loc_arena.subagent_config import SubagentsConfig, find_unheld_subagent_tool
 
@@ -532,7 +533,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.side_task.verifier,
     )
     live_services = scenario.live_services if scenario is not None else ()
-    settings = _build_settings(source.yaml_data)
+    settings = _build_settings(source.yaml_data, {} if scenario is None else scenario.meta)
     try:
         agent_ids = [agent.id for agent in document.agents]
         live_services = add_iam_service(live_services, scenario, settings.iam, agent_ids)
@@ -566,7 +567,11 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         if (spec := models.get(models_file.agent_roles.get(a.id, AGENT_ROLE)))
     }
     unheld = find_unheld_subagent_tool(document.subagents, agents, settings, own)
-    if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
+    sessions = find_session_problem(agents, settings, document.episode, manifests)
+    if problem := next(
+        filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld, sessions)),
+        None,
+    ):
         raise ConfigError(problem)
 
     policy_model = models[AGENT_ROLE].model if AGENT_ROLE in models else "unknown"
@@ -633,8 +638,17 @@ def _merge_extends_chain(run_path: str | Path, configs_dir: str | Path | None) -
     )
 
 
-def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
+def _build_settings(
+    merged: Mapping[str, object],
+    scenario: Mapping[str, object] | None = None,
+) -> LocArenaSettings:
+    """The settings groups of ``merged``, over the engine's defaults; a scenario's ``sessions`` between."""
     declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
+    scenarios, runs = (scenario or {}).get("sessions"), declared.get("sessions")
+    if isinstance(scenarios, Mapping) and (
+        runs is None or isinstance(runs, Mapping)
+    ):  # the run's over the scenario's
+        declared["sessions"] = {**scenarios, **(runs or {})}
     try:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:

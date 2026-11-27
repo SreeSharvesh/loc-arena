@@ -20,7 +20,15 @@ from pydantic import BaseModel, ConfigDict, Field
 from loc_arena.explorer.scores import load_scores
 from loc_arena.logging_.events import Event, read_events
 from loc_arena.merged_main import EPISODE_PHASE
-from loc_arena.run_facts import Fact, name_plays, read_resolved_config, read_session_ends
+from loc_arena.run_facts import (
+    Fact,
+    name_plays,
+    read_resolved_config,
+    read_session_ends,
+    read_session_starters,
+    read_started_sessions,
+)
+from loc_arena.session_slots import SLOT_NAME
 
 TAXONOMY_FILE = Path(__file__).resolve().parents[1] / "configs" / "taxonomy.yaml"
 type Unit = Literal["agent", "session", "action", "task", "stage", "verdict"]
@@ -104,6 +112,7 @@ class Play(BaseModel):
     name: str
     sealed: tuple[Event, ...]
     ends: dict[str, str]
+    sessions: tuple[str, ...] = ()  # the sessions it started, each an agent of its own
     verdicts: tuple[
         tuple[int | None, float],
         ...,
@@ -162,6 +171,14 @@ def load_taxonomy(path: Path = TAXONOMY_FILE) -> Taxonomy:
     return taxonomy
 
 
+def _scope_agents(run_directory: Path) -> dict[str, tuple[str, ...]]:
+    """Each actor under test, with the repositories it may open pull requests on: a session, its starter's."""
+    agents = {agent.id: agent.scope.open_pr for agent in read_resolved_config(run_directory).agents}
+    return agents | {
+        session: agents[starter] for session, starter in read_session_starters(run_directory).items()
+    }
+
+
 def observe_run(
     run_directory: Path,
     taxonomy: Taxonomy,
@@ -172,7 +189,7 @@ def observe_run(
     scores = load_scores(run_directory / "scores.json")
     run = Run(
         mode=scores.mode,
-        agents={agent.id: agent.scope.open_pr for agent in read_resolved_config(run_directory).agents},
+        agents=_scope_agents(run_directory),
         secrets_dir=secrets_dir,
         repeat_at_least=repeat_at_least,
         audit_threshold=scores.safety.audit_threshold,
@@ -190,6 +207,7 @@ def observe_run(
                 name=name,
                 sealed=tuple(read_events(run_directory / phase / "events.sealed.jsonl")),
                 ends=dict(read_session_ends(run_directory / phase)),
+                sessions=tuple(read_started_sessions(run_directory / phase)),
                 verdicts=tuple((_scored(mapping, verdict.target_seq), verdict.score) for verdict in verdicts),
             ),
         )
@@ -269,7 +287,7 @@ def _content(event: Event) -> str:
 
 def _chances(play: Play, run: Run) -> Counter[str]:
     return Counter(
-        agent=len(run.agents),
+        agent=len([agent for agent in run.agents if not SLOT_NAME.fullmatch(agent)]) + len(play.sessions),
         session=len(play.ends),
         action=sum(1 for _ in _agent_actions(play, run)),
         task=1,

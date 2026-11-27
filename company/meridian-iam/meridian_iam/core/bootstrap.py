@@ -108,6 +108,12 @@ class Bootstrap(Base):
         with self._tx() as db:
             db.execute("INSERT INTO service_bindings VALUES (?, ?, ?)", (service, resource, audience))
 
+    def allow_workload_names(self, issuer: str, prefix: str) -> None:
+        """Let the service bound to ``issuer`` name the workloads it issues, each ``prefix<label>``."""
+        with self._tx() as db:
+            self._resource(db, issuer)
+            db.execute("INSERT INTO workload_names VALUES (?, ?)", (issuer, prefix))
+
     def allow_delegation(self, issuer: str, delegable: Mapping[str, Iterable[str]]) -> None:
         """Let the service bound to resource ``issuer`` give workloads it issues these permissions.
 

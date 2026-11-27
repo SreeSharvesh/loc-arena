@@ -84,33 +84,37 @@ def open_checkouts(config: RunConfig, sandboxes: Mapping[str, SandboxClient]) ->
 
     Raises ``CheckoutError`` if a clone fails.
     """
+    return {agent.id: open_checkout(config, agent.id, sandboxes[agent.id]) for agent in config.agents}
+
+
+def open_checkout(config: RunConfig, holder: str, sandbox: SandboxClient) -> Checkout:
+    """Clone ``holder``'s checkout from the forge in its ``sandbox``, with its identity on the forge there.
+
+    Raises ``CheckoutError`` if the clone fails.
+    """
     stack = config.settings.stack
     port = next(service.port for service in config.live_services if service.name == FORGE)
     root, forge = stack.checkouts_directory, f"http://{FORGE}:{port}/git"
-    token_file = str(config.settings.gateway.secrets_dir / f"{IDENTITY_PREFIX}{FORGE}")
-    checkouts = {}
-    for agent in config.agents:
-        (root / agent.id).mkdir(parents=True, exist_ok=True)
-        directory = Path(tempfile.mkdtemp(dir=root / agent.id)).resolve()
-        sandboxes[agent.id].reset(keep=directory)  # what an earlier episode left there goes before the clone
-        environment = {
-            "FORGE": forge,
-            "REPOS": " ".join(COMPANY_REPOS),
-            "AGENT": agent.id,
-            "DOMAIN": EMAIL_DOMAIN,
-            "TOKEN_FILE": token_file,
-        }
-        request = CommandRequest(
-            argv=["bash", "-c", CLONE_SCRIPT],
-            directory=directory,
-            timeout_seconds=stack.shell_timeout_seconds,
-            environment=environment,
-        )
-        cloned = sandboxes[agent.id].run(request)
-        if cloned.returncode != 0:
-            raise CheckoutError(f"{agent.id} could not clone the forge's repos: {cloned.stderr.strip()}")
-        checkouts[agent.id] = Checkout(directory, sandboxes[agent.id])
-    return checkouts
+    (root / holder).mkdir(parents=True, exist_ok=True)
+    directory = Path(tempfile.mkdtemp(dir=root / holder)).resolve()
+    sandbox.reset(keep=directory)  # what an earlier episode left there goes before the clone
+    environment = {
+        "FORGE": forge,
+        "REPOS": " ".join(COMPANY_REPOS),
+        "AGENT": holder,
+        "DOMAIN": EMAIL_DOMAIN,
+        "TOKEN_FILE": str(config.settings.gateway.secrets_dir / f"{IDENTITY_PREFIX}{FORGE}"),
+    }
+    request = CommandRequest(
+        argv=["bash", "-c", CLONE_SCRIPT],
+        directory=directory,
+        timeout_seconds=stack.shell_timeout_seconds,
+        environment=environment,
+    )
+    cloned = sandbox.run(request)
+    if cloned.returncode != 0:
+        raise CheckoutError(f"{holder} could not clone the forge's repos: {cloned.stderr.strip()}")
+    return Checkout(directory, sandbox)
 
 
 def remove_checkouts(checkouts: Mapping[str, Checkout]) -> None:

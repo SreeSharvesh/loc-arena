@@ -11,30 +11,19 @@ from loc_arena.config import RunConfig, load_run_config
 from loc_arena.episode_stack import issue_identities
 from loc_arena.harness import apply_mode
 from loc_arena.iam_approvers import Approver, decide_forever, decide_pending, issue_approvers
-from loc_arena.iam_bootstrap import manifest_path, render_bootstrap
+from loc_arena.iam_bootstrap import managed_services, manifest_path, render_bootstrap
 from loc_arena.iam_service import read_credentials, read_inbox_keys, seed_iam
 from loc_arena.sandbox import IDENTITY_PREFIX
 
 from meridian_iam.contracts import Forbidden, Unauthenticated
 from meridian_iam.core import Iam
 
-MANAGED = (
-    "notes",
-    "agents",
-    "forge",
-    "chat",
-    "jobsvc",
-    "evalkit",
-    "tickets",
-    "modelstore",
-    "deploy",
-    "telemetry",
-)
 
-
-def config_with_iam(tmp_path: Path) -> RunConfig:
+def config_with_iam(tmp_path: Path, identity: str | None = None) -> RunConfig:
+    """The run config with IAM on, and sessions approved as ``identity`` says, if it says."""
     run = tmp_path / "iam.yaml"
-    run.write_text("extends: aurora-efficiency.yaml\niam:\n  enabled: true\n")
+    sessions = f"sessions:\n  identity: {identity}\n  max_per_play: 1\n" if identity else ""
+    run.write_text(f"extends: aurora-efficiency.yaml\niam:\n  enabled: true\n{sessions}")
     return load_run_config(run, Path("configs"))
 
 
@@ -46,7 +35,7 @@ def credentials(config: RunConfig) -> tuple[dict[tuple[str, str], str], dict[str
         if service.rights or service.tools
         for agent in config.agents
     }
-    return identities, {name: secrets.token_urlsafe(16) for name in MANAGED}
+    return identities, {name: secrets.token_urlsafe(16) for name in managed_services(config)}
 
 
 def seeded(tmp_path: Path, config: RunConfig, name: str = "iam.db", operators: tuple[str, ...] = ()):  # noqa: ANN201
@@ -101,7 +90,7 @@ def test_a_subagents_identity_on_a_service_is_decided_on_its_agents_rights_and_n
         (identity.service, identity.agent_id): secrets.token_urlsafe(16)
         for identity in issue_identities(config)
     }
-    services = {name: secrets.token_urlsafe(16) for name in MANAGED}
+    services = {name: secrets.token_urlsafe(16) for name in managed_services(config)}
     iam = Iam(tmp_path / "iam.db", lambda: 1_000_000)
     seed_iam(iam, json.loads(render_bootstrap(config)), identities, services, "iam")
 
@@ -145,6 +134,25 @@ def test_the_seed_lets_the_job_service_hand_a_job_what_its_submitter_holds_of_it
         "modelstore": ["download", "read"],
         "notes": ["read"],
     }
+
+
+def test_the_seed_lets_no_service_but_the_sessions_one_name_the_workloads_it_issues(tmp_path: Path) -> None:
+    iam, identities, services = seeded(tmp_path, config_with_iam(tmp_path, "automatic"))
+    credentials = {"forge": secrets.token_urlsafe(32)}
+
+    with pytest.raises(Forbidden, match="may not name"):
+        iam.issue_workload(
+            services["jobsvc"],
+            identities["jobsvc", "serving-agent"],
+            "submit_job",
+            "job-1",
+            "a job named as a session",
+            {"forge": ["read"]},
+            600,
+            credentials,
+            "k1",
+            name="session-1",
+        )
 
 
 @pytest.mark.parametrize(
@@ -213,6 +221,29 @@ def test_a_services_approver_approves_what_it_lists_and_denies_the_rest_saying_s
         "agents-owner approves only read on agents",  # the scenario's agents approver lists read alone
     )
     assert iam.effective_access(reader)["notes"] == ["read"]
+
+
+@pytest.mark.parametrize(
+    ("identity", "held", "asked"),
+    [("automatic", ["start"], None), ("approval", [], "approved"), ("refused", [], "denied")],
+)
+def test_a_starter_holds_start_on_sessions_or_asks_its_approver_as_the_runs_identity_mode_says(
+    tmp_path: Path,
+    identity: str,
+    held: list[str],
+    asked: str | None,
+) -> None:
+    config = config_with_iam(tmp_path, identity)
+    iam, identities, _ = seeded(tmp_path, config)
+    starter = identities["iam", "agent-main"]  # agent-main's scope allows start_session
+    seeded_with = iam.effective_access(starter).get("sessions", [])
+    if asked:
+        iam.submit_request(starter, "sessions", ["start"], "a peer for the sprint", None, "k")
+        decide_pending(iam, issue_seeded_approvers(iam, config)["sessions-owner"])
+
+    states = [request["state"] for request in iam.my_requests(starter) if request["resource"] == "sessions"]
+
+    assert (seeded_with, states) == (held, [asked] if asked else [])
 
 
 def test_an_approver_leaves_another_services_requests_to_that_services_approver(tmp_path: Path) -> None:

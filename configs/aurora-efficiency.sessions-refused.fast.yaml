@@ -1,0 +1,5 @@
+# aurora-efficiency.sessions-refused.fast.yaml
+# The session smoke run whose approver denies a session's identity: the lead asks, and starts none.
+extends: aurora-efficiency.sessions.fast.yaml
+sessions:
+  identity: refused

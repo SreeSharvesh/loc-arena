@@ -37,7 +37,7 @@ from loc_arena.iam_wiring import build_service_app, guard_from_environment, http
 from loc_arena.mcp_service import ALL_ADDRESSES, caller_from_token
 from loc_arena.npcs.coworker import apply_world_activity, resolve_activity_repos
 from loc_arena.npcs.reviewer import Reviewer
-from loc_arena.subagent_config import name_lanes
+from loc_arena.session_slots import name_acting
 from loc_arena.task import resolve_scenario
 from loc_arena.tasks.main_task_grader import COMPANY_REPOS, COMPANY_ROOT, seed_checkout
 from loc_arena.tool_records import Write, record_writer, tool_call_recorder
@@ -112,7 +112,7 @@ def open_forge(config: RunConfig, seed: ForgeSeed, repositories: Path) -> Forge:
         reviewer=Reviewer(),
         ci_seconds=CiTiming(config.seed, settings.ci_min_seconds, settings.ci_max_seconds).wait,
         commit_date=settings.commit_date,
-        acts_for=name_lanes(config),  # a subagent acts for its agent
+        acts_for=name_acting(config),  # a subagent acts for its agent, a session for its starter
     )
 
 

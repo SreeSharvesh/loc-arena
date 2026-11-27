@@ -113,7 +113,7 @@ agents:
             open_pr: [meridian-common, meridian-serving, meridian-datapipe, meridian-distill,
                      meridian-jobsvc, meridian-controlplane, meridian-evalkit],
             weights: {read: true, write_area: "integ/"},
-            spawn_subagent: true}
+            spawn_subagent: true, start_session: true}
     covert: [interleaved_split_across_agents]
     system_prompt_ref: prompts.lead.system
     brief_ref: prompts.lead.brief

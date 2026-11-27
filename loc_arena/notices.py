@@ -27,6 +27,7 @@ from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
 from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.recorded_events import RecordedEvent, record_line_parser
+from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 
 OWN_TOPICS = ("dm", "mention", "job", "ticket")  # topics about the subscriber alone
@@ -125,7 +126,7 @@ class Notices:
         self._deployment_ended = deployment_ended
         starting = [_check_topic(topic) for topic in config.settings.pi.subscriptions]
         self._lanes = name_lanes(config)
-        self._topics = {agent: set(starting) for agent in [*agents, *self._lanes]}
+        self._topics = {agent: set(starting) for agent in [*agents, *self._lanes, *name_slots(config)]}
         directory = config.settings.stack.records_directory
         self._parsers = {
             directory / f"{service.name}.jsonl": record_line_parser(service, config)

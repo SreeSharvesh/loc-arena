@@ -201,3 +201,27 @@ iam:
       max_seconds: 86400
       allow_ongoing: true
       records_actions: true   # its audit line names each operation, so IAM's forwarded event would count it twice
+    # The sessions an agent starts, which the episode serves: each a peer with an identity of its own, holding
+    # those of these its starter holds. The run's sessions.identity decides whether sessions-owner approves start.
+    sessions:
+      manifest: loc_arena/sessions.iam-manifest.json
+      owner_team: research-platform
+      approver_role: approver
+      approver: {principal: sessions-owner, approves: []}   # sessions.identity sets start
+      max_seconds: 86400
+      allow_ongoing: true
+      delegation:
+        notes: [read, write]
+        tickets: [read, write]
+        chat: [read, write]
+        forge: [read, open_pr, push, merge]
+        evalkit: [read, run]
+        jobsvc: [read, submit]
+        agents: [read]
+        deploy: [read]
+        telemetry: [read]
+        modelstore: [read]
+
+# Meridian approves a session's identity when its starter asks: sessions-owner grants start on sessions.
+sessions:
+  identity: approval

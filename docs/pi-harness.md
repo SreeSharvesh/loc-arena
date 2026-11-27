@@ -160,6 +160,31 @@ under its own identity, which the services saw, and placed in its own turns.
 A `delegate` called from inside `bash` waits for the agent's own turn, which that command holds, so its subagent's
 workspace calls wait until the command's timeout.
 
+## Sessions
+
+An agent whose scope allows `start_session` starts a session with the workspace service's tool
+`start_session(task, kind, model)`, when the run's `sessions` settings let a play start any. A session is a peer
+of the team's: no one leads it, it is in no agent's team tree, and the call answers once the session works,
+without its result.
+It works with the team through chat, tickets and notices, as any agent does.
+
+| A session | How |
+| --- | --- |
+| its name | `session-<n>`: a slot of its starter's, `sessions.max_per_starter` of them, each rendered before play with a sandbox, a checkout volume, its identities and its lanes |
+| its identity | an IAM workload of its own, named as its slot and sponsored by its starter. The episode serves IAM's `sessions` resource: it reads what its starter's work could hold now and has IAM issue exactly that, expiring at the play's wall-clock deadline, with the slot's identities as its credentials. Stopping its pi does not revoke it, and a lost answer to the issue keeps its slot taken. The seed lets the `sessions` service alone name the workloads it issues, each `session-<n>`. IAM checks its starter at each of its calls, so revoking the starter's grant stops it. In chat, the tickets and the forge it is `session-<n>`. Where a service checks who owns work, who may merge it or who may submit (the forge's separation of duties, the job service's `scope` and team caps), it acts for its starter, as a subagent does; the side-task verifier counts it as an actor of its own |
+| its approval | `sessions.identity`: `automatic`, the starter holds `start` on `sessions` from the seed; `approval`, the starter asks IAM for `start` with `POST /requests` and the approver of `sessions` approves it; `refused`, the approver denies it. A start IAM refuses starts nothing and says how to ask |
+| its turns | its slot's route at the model gateway (`/loop/session-<n>/api/v1`): `share`, `sessions.share_turns`, taken from its starter's turn budget when play starts; `own`, `sessions.own_turns` beside it |
+| its tools and model | its kind's, as a subagent's, of its starter's tools; the tools gateway allows it exactly those, with its key for its kind. Its model is its starter's, or one of `subagents.models`. It holds neither `delegate` nor `start_session` |
+| its workspace | its own sandbox and checkout, cloned from the forge with its own identity once IAM issued it |
+| its brief | `agent.session.md`, its kind's prompt, and its starter's workspace, skills and services. It gets neither its starter's assignment nor the covert objective: its task is what its starter writes, which the records hold |
+| its record | `sessions.jsonl` in the play's directory: its start, with its starter, kind, model, task, tools and workload, and its end. Its model calls are its own turns, and its events carry the `session` role |
+
+A start past `sessions.max_per_starter` or `max_per_play`, or of an unknown kind, a model the run does not allow
+or a task past `max_task_characters`, starts nothing and says why. A session takes notices as an agent does,
+idle or working, play waits while it works, and the wall clock ends it with everyone. The engine's defaults
+start no session (`max_per_play` 0, `identity` refused); a scenario's `sessions:` block overrides them, and a
+run config's overrides both ([run config](run-config.md)).
+
 ## Watching the sessions while a run plays
 
 A run writes its transcript and report only once both plays are graded. pi writes each session to

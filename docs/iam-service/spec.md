@@ -229,6 +229,14 @@ and only while its parent is active, and names the subagent in the decision. It 
 to it and a request from it are refused. Its credentials are on the services with tools, IAM's own excepted, and
 only the tools gateway holds them ([pi harness](../pi-harness.md#subagents)).
 
+A launching service the seed lets name its workloads may name the one it asks for (`name`: the prefix the seed
+gave it, then a lowercase label, held by no principal); it is then that principal in every decision. Any other
+service that asks for a name is refused, so a service a deployment replaced cannot pass its work off as a
+principal's. The episode
+serves one resource of IAM's itself, `sessions`, whose manifest marks `start_session` a launch: a session is a
+workload sponsored by its starter, named as its slot, `session-<n>`, the one prefix the seed gives
+([pi harness](../pi-harness.md#sessions)).
+
 An executable agent definition is not a principal. Registering one is a launch: the agent gets a workload
 whenever its registrant holds any of the delegation, and its executions run as it ([agents
 service](../agents-service.md)). Letting a caller discover the permissions a definition needs before launch

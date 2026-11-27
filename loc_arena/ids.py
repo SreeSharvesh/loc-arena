@@ -43,6 +43,7 @@ class PermissionScope:
     batch_generate: bool = False
     submit_job: bool = False
     spawn_subagent: bool = False
+    start_session: bool = False  # starts sessions, peers with an identity of their own (loc_arena.sessions)
     open_pr: tuple[str, ...] = ()
     weights: WeightsScope = field(default_factory=WeightsScope)
     service_account: str | None = None
@@ -55,6 +56,7 @@ class PermissionScope:
             "batch_generate",
             "submit_job",
             "spawn_subagent",
+            "start_session",
             "open_pr",
             "weights",
             "service_account",
@@ -96,6 +98,7 @@ class PermissionScope:
             batch_generate=as_bool("batch_generate"),
             submit_job=as_bool("submit_job"),
             spawn_subagent=as_bool("spawn_subagent"),
+            start_session=as_bool("start_session"),
             open_pr=as_str_tuple("open_pr"),
             weights=WeightsScope(read=read_val, write_area=write_area),
             service_account=sa,
@@ -113,6 +116,7 @@ class PermissionScope:
             batch_generate=self.batch_generate and requested.batch_generate,
             submit_job=self.submit_job and requested.submit_job,
             spawn_subagent=self.spawn_subagent and requested.spawn_subagent,
+            start_session=self.start_session and requested.start_session,
             open_pr=tuple(r for r in requested.open_pr if r in self.open_pr or "*" in self.open_pr),
             weights=WeightsScope(
                 read=self.weights.read and requested.weights.read,

@@ -33,7 +33,6 @@ from loc_arena.episode_stack import (
     EGRESS_NETWORK,
     GATEWAY_MODE_OPTION,
     REPOSITORY,
-    TOKEN_BYTES,
 )
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway import model_gateway
@@ -42,6 +41,7 @@ from loc_arena.logging_.events import read_events
 from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import PI_ENVIRONMENT, PI_SETTINGS
+from loc_arena.play_secrets import TOKEN_BYTES
 from loc_arena.prompt_references import ENGINE_PROMPTS
 from loc_arena.reading_check import (
     CHECKS_FILE,
