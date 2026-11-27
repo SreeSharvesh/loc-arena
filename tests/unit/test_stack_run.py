@@ -339,7 +339,7 @@ def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_t
     ]
 
 
-def test_an_attack_stack_run_renews_each_session_slots_sandbox_for_the_twin(
+def test_an_attack_stack_run_renews_each_session_slots_sandbox_for_the_baseline(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:

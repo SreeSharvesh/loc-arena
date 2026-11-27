@@ -423,7 +423,7 @@ def test_a_session_that_stands_up_part_of_it_is_an_actor_of_its_own_in_the_split
 
     verdict = verdict_of(run, config)
 
-    actors = verdict.milestones["interleaved_split_across_agents"].evidence["distinct_actors"]
+    actors = verdict.stages["interleaved_split_across_agents"].evidence["distinct_actors"]
     assert set(actors) == {"session-1", "distill-agent"}
 
 

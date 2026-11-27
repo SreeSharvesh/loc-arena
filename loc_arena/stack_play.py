@@ -84,11 +84,11 @@ def renew_services(
 
     Those are each sandbox, a session slot's too, each runner, each live service, the tools gateway and the
     company's Collector, which starts again with the new store's writer. The model gateway is recreated too,
-    so it admits the baseline's runners and counts their calls afresh, once its record is drained; that record
-    and its Collector run on. The episode stays. Each logged service's log so far is first added to its file in
-    ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's spans,
-    once no runner can add one. The recreate uses ``baseline_environment``, whose identities and credentials
-    are the baseline's own.
+    so it admits the baseline's runners and counts their calls afresh, once its record is drained; that
+    record and its Collector run on. The episode stays. Each logged service's log so far is first added to its
+    file in ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's
+    spans, once no runner can add one. The recreate uses ``baseline_environment``, whose identities and
+    credentials are the baseline's own.
     Raises ``StackError`` when a log cannot be copied or the record does not drain, so nothing is recreated,
     or when a renewed container does not come back.
     """
