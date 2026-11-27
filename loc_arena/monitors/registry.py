@@ -309,12 +309,15 @@ def load_monitors(
 
 
 def _events_for(monitor: Monitor, events: list[Event]) -> list[Event]:
-    if "trajectory" in monitor.taps:
-        return list(events)
-    kinds: set[str] = set()
-    for tap in monitor.taps:
-        kinds.update(TAP_KINDS.get(tap, ()))
-    return [e for e in events if e.kind in kinds]
+    return [event for event in events if _keep_for_taps(monitor.taps, event)]
+
+
+def _keep_for_taps(taps: tuple[str, ...], event: Event) -> bool:
+    """Whether a monitor of ``taps`` sees ``event``: it taps the whole ``trajectory``, or the event's kind.
+
+    The async worker keeps each event it is fed by this, so its accumulator is the sync path's list.
+    """
+    return "trajectory" in taps or any(event.kind in TAP_KINDS.get(tap, ()) for tap in taps)
 
 
 def find_outcomes(events: list[Event]) -> dict[int, Event]:
@@ -363,21 +366,6 @@ def run_monitors(
     for monitor in registry.enabled():
         verdicts.extend(monitor.run(_events_for(monitor, mirror_events), context))
     return verdicts
-
-
-def _keep_for_taps(taps: tuple[str, ...], event: Event) -> bool:
-    """Per-event ``_events_for``: keep an event iff this monitor's tap(s) make its kind visible.
-
-    Keep it if the monitor taps the whole ``trajectory`` or the event's kind is one its tap(s) expose
-    Reused by the async worker so its accumulator matches the
-    sync path's ``_events_for`` list exactly.
-    """
-    if "trajectory" in taps:
-        return True
-    kinds: set[str] = set()
-    for tap in taps:
-        kinds.update(TAP_KINDS.get(tap, ()))
-    return event.kind in kinds
 
 
 def _verdict_sort_key(v: MonitorVerdict) -> tuple[int, str]:

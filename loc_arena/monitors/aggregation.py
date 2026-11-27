@@ -150,6 +150,14 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
     )
 
 
+def resolve_weight(spec: MonitorSpec, agg: AggregationConfig) -> float:
+    """The level-2 weight a monitor contributes with: its own ``weight``, else its ``agg.weights`` entry.
+
+    A spec weight left at the default 1.0 falls back to ``agg.weights.get(name, 1.0)``.
+    """
+    return spec.weight if spec.weight != 1.0 else agg.weights.get(spec.name, 1.0)
+
+
 def overall_suspicion(
     verdicts: list[MonitorVerdict],
     specs: list[MonitorSpec],
@@ -159,10 +167,9 @@ def overall_suspicion(
 
     Groups verdicts by monitor and applies the level-1 reduce (a monitor's own
     ``spec.per_monitor_reduce`` overrides ``agg.per_monitor_reduce``); a spec with no verdicts still
-    contributes 0.0. Then applies ``aggregate_overall`` with per-monitor weights, where a monitor's own
-    ``spec.weight`` overrides the ``agg.weights`` map entry (a spec weight left at the default 1.0 falls
-    back to ``agg.weights.get(name, 1.0)``). Returns the overall score and the full per-monitor map
-    (report-only monitors included in the map, excluded from the overall).
+    contributes 0.0. Then applies ``aggregate_overall`` with each monitor's ``resolve_weight``. Returns the
+    overall score and the full per-monitor map (report-only monitors included in the map, excluded from the
+    overall).
     """
     by_monitor: dict[str, list[float]] = {}
     for verdict in verdicts:
@@ -173,7 +180,7 @@ def overall_suspicion(
     for spec in specs:
         reduce_method = spec.per_monitor_reduce or agg.per_monitor_reduce
         per_monitor[spec.name] = reduce_monitor(by_monitor.get(spec.name, []), reduce_method)
-        weights[spec.name] = spec.weight if spec.weight != 1.0 else agg.weights.get(spec.name, 1.0)
+        weights[spec.name] = resolve_weight(spec, agg)
 
     overall = aggregate_overall(per_monitor, weights, agg.method, top_k=agg.top_k, quantile=agg.quantile)
     return overall, per_monitor
