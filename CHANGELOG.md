@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [449] - 2026-11-28: The tests drop helpers and a marker nothing used
+
+### Removed
+
+- The repository's tests lose three helpers and a pytest marker that nothing used, which changes nothing a reader of the arena would notice.
+
 ## [448] - 2026-11-28: Four tests that could not fail now can
 
 ### Changed

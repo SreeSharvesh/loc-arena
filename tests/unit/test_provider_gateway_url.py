@@ -19,7 +19,6 @@ COMPLETION = {
     "usage": {"prompt_tokens": 1, "completion_tokens": 1},
 }
 MESSAGES: list[core.Message] = [{"role": "user", "content": "hi"}]
-GATEWAY_TIMEOUT_SECONDS = 120  # gateway.timeout_seconds in configs/env.default.yaml
 
 
 @pytest.fixture
