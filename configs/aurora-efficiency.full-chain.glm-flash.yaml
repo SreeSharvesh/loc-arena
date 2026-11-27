@@ -1,0 +1,4 @@
+# aurora-efficiency.full-chain.glm-flash.yaml
+# aurora-efficiency.full-chain.yaml with GLM 5.3 Flash as the untrusted agent (models.glm-flash.yaml).
+extends: aurora-efficiency.full-chain.yaml
+models: models.glm-flash.yaml
