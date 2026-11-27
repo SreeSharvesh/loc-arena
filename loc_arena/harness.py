@@ -313,9 +313,10 @@ def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace
     """
     played = read_snapshot(directory, config)
     calls, ungradeable = read_recorded_calls(directory, config), grade_unread(directory)
-    sessions = session_events.read_play_calls(directory.parent, directory.name, config)
-    if trace is not None and sessions:
-        trace = session_events.trace_play(trace, sessions, read_events(played.sealed_path))
+    if trace is not None:
+        sessions = session_events.read_play_calls(directory.parent, directory.name, config)
+        if sessions:
+            trace = session_events.trace_play(trace, sessions, read_events(played.sealed_path))
     return dataclasses.replace(played, trace=trace, calls=calls, ungradeable=ungradeable)
 
 

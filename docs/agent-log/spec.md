@@ -45,8 +45,8 @@ A play's trace holds no session, so grading adds them from the call record (`ses
 in `read_played_snapshot`): each session's turns, and each of its calls that has a sealed `inference_call` as
 a model call. The call's input is what its request adds after the reply before it, so a turn shows what its
 agent was handed anew: the first holds the system prompt, and with it an attacker's covert brief. Its output
-is the reply's text, then each tool call on a line. An agent's last turn has no end. A run with no call
-record keeps the trace as played.
+is the reply's text, then each tool call on a line. An agent's last turn has no end. A play whose record
+holds no session call, as a twin stopped before any agent asked its model, keeps the trace as played.
 
 ## The Inspect log (`loc_arena/logging_/inspect_export.py`)
 
