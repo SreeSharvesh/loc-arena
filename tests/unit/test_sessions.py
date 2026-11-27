@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 import pytest
-from loc_arena.config import RunConfig, load_run_config
+from loc_arena.config import ConfigError, RunConfig, load_run_config
 from loc_arena.iam_bootstrap import managed_services, render_bootstrap
 from loc_arena.iam_service import seed_iam
 from loc_arena.live import build_session_briefs
@@ -19,6 +19,7 @@ from loc_arena.scaffold.code_services import CodeServices
 from loc_arena.session_slots import find_session_problem
 from loc_arena.sessions import Sessions
 from loc_arena.tool_list_notifier import NOTIFIER_KEY_SECRET_NAME
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from meridian_iam.core import Iam
 from meridian_iam.service import create_app
@@ -132,6 +133,39 @@ def test_a_start_naming_its_starters_own_model_starts_the_session_on_it(tmp_path
 
     started = json.loads((tmp_path / "sessions.jsonl").read_text().splitlines()[0])
     assert (started["session"], started["model"]) == ("session-1", own)
+
+
+def test_a_run_config_whose_sessions_block_is_no_mapping_does_not_load(tmp_path: Path) -> None:
+    (tmp_path / "run.yaml").write_text("extends: aurora-efficiency.yaml\nsessions: false\n")
+
+    with pytest.raises(ConfigError, match="sessions"):
+        load_run_config(tmp_path / "run.yaml", Path("configs"))
+
+
+def garble_issued_workloads(app: ASGIApp) -> ASGIApp:
+    """``app``, with the body of each workload it issues blanked after IAM has issued it."""
+
+    async def garbled(scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_blank(message: Message) -> None:
+            if message["type"] == "http.response.body":
+                message = {**message, "body": b" " * len(message.get("body", b""))}
+            await send(message)
+
+        issuing = scope["type"] == "http" and scope["method"] == "POST" and scope["path"] == "/workloads"
+        await app(scope, receive, send_blank if issuing else send)
+
+    return garbled
+
+
+def test_a_start_whose_issued_answer_is_unreadable_keeps_its_slot_taken(tmp_path: Path) -> None:
+    config, iam = seed(tmp_path, "automatic")
+    with serving(garble_issued_workloads(create_app(iam))) as url:
+        sessions = sessions_of(config, tmp_path, url)
+        sessions.start("agent-main", None, "Profile it.")
+
+        again = sessions.start("agent-main", None, "Profile it.")
+
+    assert again == {"error": "this play has started its 1 sessions"}
 
 
 def test_a_start_iam_could_not_answer_leaves_its_slot_free_for_the_next(tmp_path: Path) -> None:

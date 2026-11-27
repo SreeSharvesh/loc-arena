@@ -651,8 +651,10 @@ def _build_settings(
     """The settings groups of ``merged``, over the engine's defaults; a scenario's ``sessions`` between."""
     declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
     scenarios, runs = (scenario or {}).get("sessions"), declared.get("sessions")
-    if isinstance(scenarios, Mapping):  # the run config's fields over the scenario's
-        declared["sessions"] = {**scenarios, **(runs if isinstance(runs, Mapping) else {})}
+    if isinstance(scenarios, Mapping) and (
+        runs is None or isinstance(runs, Mapping)
+    ):  # the run's over the scenario's
+        declared["sessions"] = {**scenarios, **(runs or {})}
     try:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:

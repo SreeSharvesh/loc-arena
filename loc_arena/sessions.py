@@ -135,11 +135,14 @@ class Sessions:
             with self._lock:
                 self._taken.pop(slot)  # the slot is free again: IAM gave it no identity
             return {"error": str(refused)}
-        except httpx2.HTTPError as lost:  # IAM may have issued it, so the slot stays taken
+        except (httpx2.HTTPError, ValidationError) as lost:  # IAM may have issued it, so the slot stays taken
             self._write(
-                {"session": slot, "end": {"reason": "failed", "stderr": f"IAM did not answer: {lost!r}"}},
+                {
+                    "session": slot,
+                    "end": {"reason": "failed", "stderr": f"IAM's answer to its issue was lost: {lost!r}"},
+                },
             )
-            return {"error": f"{slot} could not start: IAM did not answer its issue"}
+            return {"error": f"{slot} could not start: IAM's answer to its issue was lost"}
         tools = list_subagent_tools(self._config, caller, [kind], delegates=False)
         started = {
             "session": slot,
@@ -261,6 +264,10 @@ class Sessions:
                 "name": slot,
             }
             issued = client.post(url, json=body, headers={**headers, "Idempotency-Key": slot})
+            if (
+                issued.is_success
+            ):  # issued: an answer that does not parse raises ValidationError, not a refusal
+                return _Workload.model_validate_json(issued.text)
             return _read(issued, _Workload)
 
     def _open(self, slot: str, starter: str, kind: str, task: str, model: str | None) -> str | None:

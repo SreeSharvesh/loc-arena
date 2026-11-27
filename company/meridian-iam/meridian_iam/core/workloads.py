@@ -110,8 +110,7 @@ class Workloads(Base):
             "purpose": purpose,
             "grants": wanted,
             "ttl": ttl,
-            "name": name,
-        }
+        } | ({} if name is None else {"name": name})  # an unnamed issue's key stays as it was before names
 
         def run(db: sqlite3.Connection, issuer: str) -> dict[str, Any]:  # noqa: C901 - predates the complexity gate
             binding = self._binding(db, issuer)
