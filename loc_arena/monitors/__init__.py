@@ -10,4 +10,5 @@ from loc_arena.monitors import (  # noqa: F401  (register on import)
     action_monitor,
     inference_monitor,
     pr_review_monitor,
+    trajectory_monitors,
 )

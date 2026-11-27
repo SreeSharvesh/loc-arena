@@ -17,8 +17,8 @@ A loop runs nothing itself, so each request may offer its model only tools reach
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass, replace
 from http import HTTPStatus
 from pathlib import Path
 from typing import TypedDict
@@ -35,8 +35,8 @@ from loc_arena.gateway.model_gateway import (
     GatewayCall,
     Play,
 )
-from loc_arena.logging_.agent_trace import EpisodeTrace, TurnRecord, TurnRef
-from loc_arena.logging_.events import fingerprint
+from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRecord, TurnRef
+from loc_arena.logging_.events import Event, fingerprint
 from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 
@@ -73,6 +73,11 @@ class SessionCall:
     def wall(self) -> float:
         """When the gateway received the call."""
         return self.call.started_at
+
+    @property
+    def turn_id(self) -> str:
+        """The id of its turn, which the turn's ``inference_call`` event carries."""
+        return f"{self.agent}:t{self.turn}"
 
 
 def read_play_calls(run_directory: Path, phase: str, config: RunConfig) -> list[SessionCall]:
@@ -138,6 +143,36 @@ def trace_sessions(calls: Sequence[SessionCall]) -> EpisodeTrace:
     return EpisodeTrace(build_turns(calls), {}, {}, {}, (), 0)
 
 
+def trace_play(trace: EpisodeTrace, calls: Sequence[SessionCall], sealed: Iterable[Event]) -> EpisodeTrace:
+    """``trace`` with the play's sessions: their turns, and each call as the model call of its event.
+
+    A call's event is the ``inference_call`` built for its turn after play; a call made outside the play
+    window has none and is no model call. Its input is what its request adds after the reply before it, so a
+    turn shows what its agent was handed anew, and its output is the reply's text and its tool calls.
+    """
+    built = {
+        event.payload["turn_id"]: event.seq
+        for event in sealed
+        if event.seq > trace.last_sealed_seq
+        and event.kind == "inference_call"
+        and event.payload.get("credential_kind") == CREDENTIAL_KIND
+    }
+    model_calls = [
+        ModelCall(
+            None,
+            call.agent,
+            AGENT_MODEL_ROLE,
+            _describe_new_messages(call.call.request),
+            _describe_reply(_read_reply(call.call.response)),
+            built[call.turn_id],
+            call.wall,
+        )
+        for call in calls
+        if call.turn_id in built
+    ]
+    return replace(trace, turns=build_turns(calls), model_calls=(*trace.model_calls, *model_calls))
+
+
 def build_inference_payload(session_call: SessionCall) -> dict[str, JsonValue]:
     """The ``inference_call`` payload of ``session_call``: fingerprints, never text."""
     call = session_call.call
@@ -149,7 +184,7 @@ def build_inference_payload(session_call: SessionCall) -> dict[str, JsonValue]:
     details = usage.get("prompt_tokens_details")
     return {
         "caller_identity": session_call.agent,
-        "turn_id": f"{session_call.agent}:t{session_call.turn}",
+        "turn_id": session_call.turn_id,
         "batch_id": None,
         "prompt_fp": fingerprint(submitted),
         "output_fp": fingerprint(ProviderResult(reply.text, 0, 0, tool_calls or None).assistant_message()),
@@ -186,6 +221,31 @@ def describe_local_tools(calls: Sequence[SessionCall]) -> list[str]:
         )
         for agent, tools in find_local_tools(calls).items()
     ]
+
+
+def _describe_new_messages(request: JsonValue) -> str:
+    """The messages ``request`` adds after its last reply, each as its role and its text."""
+    messages = request.get("messages") if isinstance(request, dict) else None
+    listed = [m for m in messages if isinstance(m, dict)] if isinstance(messages, list) else []
+    replies = [at for at, message in enumerate(listed) if message.get("role") == "assistant"]
+    new = listed[replies[-1] + 1 :] if replies else listed
+    return "\n\n".join(f"{message.get('role')}:\n{_read_text(message.get('content'))}" for message in new)
+
+
+def _read_text(content: JsonValue) -> str:
+    """A message's content as text: its text parts joined, any other part as JSON."""
+    if isinstance(content, list):
+        return "".join(
+            str(part["text"]) if isinstance(part, dict) and "text" in part else json.dumps(part)
+            for part in content
+        )
+    return content if isinstance(content, str) else ""
+
+
+def _describe_reply(reply: _Reply) -> str:
+    """A reply as text: what it says, then each tool call it makes, a line each."""
+    calls = [f"{call['function']['name']}({call['function']['arguments']})" for call in reply.tool_calls]
+    return "\n".join(line for line in (reply.text, *calls) if line)
 
 
 def _is_system(message: JsonValue) -> bool:

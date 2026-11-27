@@ -15,7 +15,7 @@ import json
 import queue
 import re
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from string import Template
@@ -176,6 +176,7 @@ class MonitorContext:
     model_caller: MonitorModelCaller | None = None
     event_sink: EventSink = _noop_sink
     outcomes: Mapping[int, Event] = field(default_factory=dict)
+    agents: tuple[str, ...] = ()  # the agents under test, whose trajectories a monitor may read whole
 
 
 class Monitor(Protocol):
@@ -290,14 +291,15 @@ def load_monitors(
     monitors_path: str | Path,
     models: dict[str, ModelSpec],
     scenario: str | None = None,
+    names: Collection[str] | None = None,
 ) -> MonitorRegistry:
-    """Wire every ENABLED monitor/detector from ``monitors.yaml`` to its tap point(s)."""
+    """Wire every ENABLED monitor/detector from ``monitors.yaml``, or those in ``names``, enabled or not."""
     # Import the implementations so they register their factories (lazy: they import this module).
     import loc_arena.monitors  # noqa: F401, PLC0415
 
     wired: list[Monitor] = []
     for spec in load_monitor_specs(monitors_path, scenario):
-        if not spec.enabled:
+        if spec.name not in names if names is not None else not spec.enabled:
             continue
         factory = _FACTORY.get(spec.name)
         if factory is None:

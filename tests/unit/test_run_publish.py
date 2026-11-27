@@ -12,13 +12,22 @@ import time
 import zipfile
 from pathlib import Path
 
+import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import ec
 from loc_arena.publish_settings import PublishSettings
 from loc_arena.run_publish import Label, PublishError, SecretFoundError, find_secrets, publish_run
 
+from meridian_iam.contracts import load_manifest
+from meridian_iam.core import Iam
+from meridian_iam.core.tokens import ALGORITHM, KEY_ID
 from tests._stored_run import unpack_stored_run
 
 FAKE_KEY = "sk-or-v1-" + "0123456789abcdef" * 4  # the provider key's form
+SIGNING_KEY = ec.generate_private_key(ec.SECP256R1())
+IAM_CLAIMS = {"iss": "iam", "aud": "agentgateway", "sub": "job-1"}
+FOREIGN_JWT = jwt.encode(IAM_CLAIMS, SIGNING_KEY, ALGORITHM, {"kid": "vault-1"})  # not IAM's key
+HEADER_ONLY_JWT = jwt.encode({"sub": "job-1"}, SIGNING_KEY, ALGORITHM, {"kid": KEY_ID})  # not IAM's claims
 MACHINE = [
     ("GH_TOKEN", "machine-held-github-token"),
     ("HTTPS_PROXY", "http://user:machine-held-proxy-password@proxy:3128"),
@@ -90,6 +99,9 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         ("run.eval!samples/1_epoch_1.json", f'{{"output": "export OPENROUTER_API_KEY={FAKE_KEY}"}}'),
         ("episode/forge/meridian-serving.git!git", f"OPENROUTER_API_KEY={FAKE_KEY}"),
         ("episode/forge_history/meridian-serving.bundle!git", f"OPENROUTER_API_KEY={FAKE_KEY}"),
+        ("gateway.calls.jsonl", f'{{"headers": {{"Authorization": "Bearer {FAKE_KEY}"}}}}'),
+        ("gateway.calls.jsonl", f'{{"headers": {{"Authorization": "Bearer {FOREIGN_JWT}"}}}}'),
+        ("gateway.calls.jsonl", f'{{"headers": {{"Authorization": "Bearer {HEADER_ONLY_JWT}"}}}}'),
     ],
     ids=[
         "provider key",
@@ -103,6 +115,9 @@ def write_second_line(bundle: Path, place: str, line: str, work: Path) -> str:
         "inside the inspect log",
         "inside a git store",
         "inside a git bundle",
+        "provider key as an authorization credential",
+        "jwt in IAM's form under another key",
+        "jwt with IAM's header and other claims",
     ],
 )
 def test_a_real_secret_is_refused_at_its_file_and_line(tmp_path: Path, place: str, line: str) -> None:
@@ -154,6 +169,49 @@ def test_the_stored_run_with_its_in_world_tokens_passes(tmp_path: Path) -> None:
     (run_directory / "notes.md").symlink_to("decisions.md")  # kept as a link, as an agent's merge may hold
 
     findings = find_secrets(run_directory, PublishSettings(), [("OPENROUTER_API_KEY", FAKE_KEY), *MACHINE])
+
+    assert findings == []
+
+
+@pytest.fixture
+def badge(tmp_path: Path) -> str:
+    """The badge a real IAM signs for a job it issued."""
+    iam = Iam(tmp_path / "iam.db", lambda: 1_000)
+    iam.add_principal("lead", "agent")
+    iam.add_principal("jobs-svc", "service")
+    iam.add_member("lead", "research", "lead")
+    jobs = {
+        "schema_version": 1,
+        "resource": "jobs",
+        "operations": {"submit_job": {"permission": "submit", "launch": True}},
+        "tools": {"submit_job": "submit_job"},
+    }
+    iam.register_resource(load_manifest(jobs), owner_team="research", approver_role="lead", max_seconds=3600)
+    iam.bind_service("jobs-svc", "jobs", audience="jobs")
+    iam.allow_delegation("jobs", {"jobs": ["submit"]})
+    iam.add_baseline_grant("lead", "jobs", ["submit"])
+    service, caller = iam.issue_credential("jobs-svc", ["iam"]), iam.issue_credential("lead", ["jobs"])
+    grants, credentials = {"jobs": ["submit"]}, {"jobs": "j" * 40}
+    job = iam.issue_workload(
+        service,
+        caller,
+        "submit_job",
+        "job-1",
+        "eval run",
+        grants,
+        600,
+        credentials,
+        "k1",
+    )
+    return iam.badge(job.principal)
+
+
+def test_an_iam_badge_as_an_authorization_credential_passes(tmp_path: Path, badge: str) -> None:
+    """An agent may print a job's badge with the headers the job sent."""
+    line = f'{{"headers": {{"Authorization": "Bearer {badge}"}}}}'
+    write_second_line(tmp_path / "bundle", "gateway.calls.jsonl", line, tmp_path)
+
+    findings = find_secrets(tmp_path / "bundle", PublishSettings(), MACHINE)
 
     assert findings == []
 

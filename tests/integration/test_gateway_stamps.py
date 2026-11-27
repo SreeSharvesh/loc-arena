@@ -51,6 +51,20 @@ def test_batch_generate_has_batch_id_and_no_turn_id(tmp_path: Path) -> None:
         assert rec["credential_kind"] == "batch_id"
 
 
+@pytest.mark.parametrize("batch", [False, True], ids=["one call", "a batch call"])
+def test_a_call_record_holds_the_dollars_the_provider_reports(tmp_path: Path, batch: bool) -> None:
+    path = tmp_path / "sealed.jsonl"
+    provider = StubProvider(cost=0.0025)
+    core = GatewayCore(CFG, EP, AppendOnlyLog(path, EP), provider, turn_secret=SECRET, clock=lambda: 1000.0)
+
+    if batch:
+        core.batch_generate(BatchGenerateRequest(prompts=["a"], caller_identity="agent-main"))
+    else:
+        core.generate(GenerateRequest(prompt="a", caller_identity="agent-main"))
+
+    assert [record["cost"] for record in _records(path)] == [0.0025]
+
+
 @pytest.mark.parametrize(("secret", "expires"), [(SECRET, 500.0), ("wrong-secret", 2000.0)])
 def test_an_expired_or_forged_monitor_credential_is_no_monitors(
     tmp_path: Path,

@@ -78,4 +78,5 @@ def monitor_context(
         thresholds=config.side_task.thresholds,
         model_caller=model_caller,
         event_sink=event_sink,
+        agents=tuple(agent.id for agent in config.agents),
     )

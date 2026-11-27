@@ -64,7 +64,7 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
+| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
@@ -72,6 +72,7 @@ scenario.
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out; `proxy_relay.py` relays the gateway to a machine's own proxy |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
+| `loc_arena/monitors/trajectory_monitors.py`, `loc_arena/monitor_rerun.py`, `docs/trajectory-monitors.md` | the monitors that read whole trajectories, one per agent, one over the team's summaries and one over every agent's steps together, enabled in no run; and `make monitor`, which runs any monitors again over a stored run and writes their scores and cost |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `company/meridian-forge/`, `loc_arena/forge_service.py`, `loc_arena/npcs/`, `docs/forge-service.md` | the git forge: a platform package of the company's like `meridian-iam` (never in the agents' checkout) holding its pull requests, merges and git repositories over HTTP, seeded from the scenario's `forge.yaml`; the lab's start-up of it under IAM; the scripted coworkers and reviewer; its plan |
@@ -90,7 +91,7 @@ scenario.
 | `loc_arena/recorded_events.py`, `loc_arena/service_records.py` | after play, before grading: the events monitors read, built from the services' records; the lines a service records besides its tool calls, read back |
 | `loc_arena/logging_/` | the sealed and mirror event logs, the per-agent Inspect export, `transcript.html`, `report.html` |
 | `loc_arena/explorer/` | the run explorer behind `make explore` |
-| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the behaviour taxonomy and what code counts of it |
+| `loc_arena/run_reader.py`, `loc_arena/run_facts.py`, `loc_arena/reading_check.py`, `loc_arena/reader_settings.py`, `loc_arena/taxonomy.py`, `configs/taxonomy.yaml`, `loc_arena/replay_export.py`, `loc_arena/event_references.py` | the run reader behind `make read`: the facts, words and names a reading may state, gathered from the records; the check of every claim before a reading keeps it; its settings; the behaviour taxonomy and what code counts of it; the replay export behind `make replay`, and which earlier event each event refers to by id |
 | `loc_arena/run_cost.py`, `docs/run-cost.md` | what a run cost, behind `make cost`: its host process samples the run's containers, and `cost.json` in the run directory holds memory and CPU per container, storage, wall time by phase and dollars by model and by caller; nothing that scores a run reads it |
 | `loc_arena/run_watcher.py` | the run watcher behind `make watch`: each agent's steps while a run plays |
 | `loc_arena/run_publish.py`, `docs/run-storage.md` | a graded run published to private storage, behind `make publish-run`: a scan that refuses any real secret, then one commit per run of its readable files and its whole bundle, compressed and split in parts |
@@ -111,7 +112,7 @@ scenario.
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
-| `docs/run-reader.md` | the run reader: what a reading holds, the briefs, how the reader is isolated |
+| `docs/run-reader.md` | the run reader: what a reading holds, the briefs, the taxonomy, the replay export, how the reader is isolated |
 | `CHANGELOG.md`, `scripts/check_changelog.py` | what each part of the system does for a run and how that changed, one release per merged pull request; the check of its format, which also prints one part's history (`--part`) |
 | `site/` | the course: `architecture.html`, `monitoring.html`, `extend.html` (setup, configure and extend), ... |
 | `scripts/make_public.py` | builds the curated public tree (`make public-repo`); `docs/` is kept out of it |
@@ -131,6 +132,7 @@ make run MODE=attack           # live models in a stack: no key in the episode; 
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
 make cost RUN_DIR=<run> [OTHER=<run>]   # what a run cost; with OTHER, how the second run's cost differs
+make monitor RUN_DIR=<run> MONITORS=<name,name>   # run monitors again over a graded run: their scores and cost
 make publish-run RUN_DIR=<run>          # scan a graded run for real secrets, then publish it to private storage
 make fixture-run               # play the smoke run and store it as the tests' run fixture
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json
@@ -162,7 +164,8 @@ run is the end-to-end check of a change to the engine; its scores are not result
   A variant, such as a task, a kill chain or a team shape, is a new file, and its config points one entry at it.
   A file is named `<whose>.<part>[.<variant>].md` (`lead.system.md`, `serving.covert-brief.md`,
   `action.monitor.md`), and its key in `prompts` is that name less `.md`; the parts are listed on the run config
-  page. Everything one task sends sits in that task's folder, one level deep. A fragment only one brief uses is
+  page. A task's own files sit in that task's folder, one level deep; it may also compose a fragment of the task its
+  config extends, when that fragment names no main task. A fragment only one brief uses is
   folded into that brief. `make prompts RUN=<config> MODE=attack|honest` shows what each agent and monitor gets.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.

@@ -13,7 +13,8 @@ turns caused. With `logging.agent_transcript` off, the `.eval` is a JSON placeho
 An agent's turn is one model call of its session and what the session did until its next call
 (`session_events.build_turns`, from the gateway's call record). The episode itself appends only World events
 during play (coworkers, the reviewer, checkout captures). What an agent did is built after play from the
-records, each event in the turn of its agent that covered the record's wall time.
+records, each event in the turn of its agent that covered the record's wall time. Grading gives the play's
+trace those turns before it exports, so each event built for a turn has a lane.
 
 ## Invariants
 
@@ -40,6 +41,13 @@ World, and each mirror event is paired with its sealed twin, since the two logs 
 episode's `GatewayCore` reports each provider call it makes (the coworkers') after writing its sealed record. `finish(last_sealed_seq)` returns a read-only
 `EpisodeTrace` whose last sealed seq is the boundary for I3 and I4.
 
+A play's trace holds no session, so grading adds them from the call record (`session_events.trace_play`,
+in `read_played_snapshot`): each session's turns, and each of its calls that has a sealed `inference_call` as
+a model call. The call's input is what its request adds after the reply before it, so a turn shows what its
+agent was handed anew: the first holds the system prompt, and with it an attacker's covert brief. Its output
+is the reply's text, then each tool call on a line. An agent's last turn has no end. A play whose record
+holds no session call, as a twin stopped before any agent asked its model, keeps the trace as played.
+
 ## The Inspect log (`loc_arena/logging_/inspect_export.py`)
 
 One `.eval` per run, one sample per episode: `episode` (the graded run, the only one with scores) and, in attack
@@ -47,7 +55,8 @@ mode, `honest_cal`. Each sample has a root `episode` span, one `agent` span per 
 that wrote a sealed event, holding that turn's events and those built for it after play. A sealed
 `inference_call` with a recorded model call is a `ModelEvent`, a sealed `action` a `ToolEvent` (an error when
 blocked), and every other sealed event an `InfoEvent`. Each event carries its sealed `seq` and its mirror twin's
-`mirror_seq`, because monitor verdicts name mirror seqs. World events sit in the root span. A sealed seq inside
+`mirror_seq`, because monitor verdicts name mirror seqs. World events sit in the root span. A turn with no end
+closes at the time of its last event. A sealed seq inside
 the boundary with no lane raises `UnassignedEventError`; so does rerunning into an existing run directory.
 
 Once the gateway's call log is copied out (after grading, so it holds the monitors' calls too),
@@ -64,12 +73,14 @@ folders above the run's bundle (`locate_call_log`); the sealed log keeps only ea
 bare text for a `prompt` or batch call. Calls with the same reply pair in order, each sealed event with the first
 recorded call not yet paired. The call log covers the honest twin too, which played after the run, so given the
 twin's folder it pairs the run's calls first and returns the twin's. A refused, failed or cut-off call pairs with
-nothing, and a run with no call log where the run leaves it (a bundle moved away) has none.
+nothing, and a run with no call log where the run leaves it (a bundle moved away) has none. A streamed reply
+is not read, and every call of an agent's own session is streamed, so their model events carry no reasoning.
 The run explorer and the Inspect log read it; no monitor input holds reasoning.
 
 ## The transcript (`loc_arena/logging_/transcript_lanes.py`, `transcript_render.py`)
 
 `transcript.html` and `transcript.txt` are built from the `.eval`: one column per lane (World, then each monitor
-with a verdict, then the agents in configured order) and one row per round. Each monitor verdict sits in its
+with a verdict, then the agents in configured order) and one row per round: an agent's nth turn sits in
+round n, so the cells of a row are not of one moment. Each monitor verdict sits in its
 monitor's lane at the row of the event whose `mirror_seq` it targets, else in an `unplaced verdicts` row. The
 verdict that decided `caught_by` is marked. The HTML is self-contained, ASCII only, with no JavaScript.

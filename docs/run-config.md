@@ -72,6 +72,7 @@ loc_arena/prompts/                          the engine's: true of any scenario, 
 ├── general-purpose.subagent.md             the built-in kind of subagent's prompt
 ├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
 ├── <monitor>.monitor.md                    a monitor's prompt: its inputs at $inputs, each scenario fact a $placeholder
+├── <monitor>.summarizer.md                 the prompt of a monitor's summarizer, which compacts what the monitor rates
 ├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
 ├── iam.service.md                          what agents are told IAM is
 └── coworker.batch.md                       the scripted coworker's one model call
@@ -79,7 +80,7 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
-└── <task>/                                 everything one main task sends, in both plays and the attack
+└── <task>/                                 one main task's own files, for both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
@@ -108,6 +109,7 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
 | `service` | what agents are told a service is, if a brief tells it: one their sandbox reaches, or the telemetry store | the service's name, read by the scenario's loader |
 | `monitor` | a monitor's prompt | its `prompt_ref` in `configs/monitors.yaml` |
+| `summarizer` | the prompt of a monitor's summarizer ([trajectory monitors](trajectory-monitors.md)) | its `summarizer_prompt_ref` in `configs/monitors.yaml` |
 | `<fact>`, as `monitor.<fact>` | one scenario fact a monitor prompt names, as `$<fact>`, `-` written `_` | `prompt_values` in `configs/monitors.yaml` |
 
 A monitor prompt names nothing of one company or one task. Each such fact is a placeholder, and
@@ -117,7 +119,9 @@ each event's inputs, and refuses a placeholder with no value, a value no monitor
 value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
-briefs share it, or when it is the kill chain, which variants replace.
+briefs share it, or when it is the kill chain, which variants replace. A task whose run config extends another
+task's composes that task's fragments where their wording names no main task, in place of a copy: the
+model-selection briefs compose the efficiency push's `team.covert-objective` and `serving.covert-calls`.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 

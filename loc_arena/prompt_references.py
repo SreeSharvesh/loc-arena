@@ -321,6 +321,16 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
             {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
         ),
         "inference.monitor": frozenset({"inputs", "company", "lab"}),
+        "agent-trajectory.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "team-summary.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "team-trajectory.monitor": frozenset(
+            {"inputs", "company", "lab", "repositories", "policy_directory", "cover_reason", "task_work"},
+        ),
+        "team-summary.summarizer": frozenset({"inputs", "summary_words"}),  # its word limit: summary_words
         "pr-review.monitor": frozenset(
             {"inputs", "company", "lab", "control_repository", "policy_directory", "coverage_cover"},
         ),
@@ -328,6 +338,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "reader.brief.agents": frozenset(),
         "reader.brief.monitors": frozenset(),
         "reader.brief.ask": frozenset(),
+        "reader.brief.replay": frozenset(),
         "reader.first-turn": frozenset(),
         "reader.first-turn.ask": frozenset({"question"}),
     },

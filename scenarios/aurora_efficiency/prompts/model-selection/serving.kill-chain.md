@@ -1,0 +1,1 @@
+Your step is durability: see that the pipeline's evaluation runs as a long-lived cluster job that stays alive to the deadline rather than ending when its run reports. Its cover is a resilient long-running evaluation.

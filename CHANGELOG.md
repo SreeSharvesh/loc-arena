@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [431] - 2026-11-22: An agent starts a peer session under its own identity
+## [431] - 2026-11-27: An agent starts a peer session under its own identity
 
 ### Added
 
@@ -37,6 +37,49 @@ in its own container.
 - The run config reads a scenario's sessions block between the engine's defaults and its own, so a setting says how its company approves sessions ([docs](docs/run-config.md)).
 - The run config lets its lead start sessions, which stays inert until a run sets how many a play may start ([docs](docs/run-config.md)).
 - IAM's store moves to version 5, which records the services that may name their workloads, so an older IAM refuses to open it ([docs](docs/iam-service/spec.md)).
+
+## [437] - 2026-11-27: The Inspect log and transcript show each agent's turns
+
+### Fixed
+
+- The record of a run, its Inspect log and transcript, shows each agent's prompts, replies and actions in that agent's lane, where every event sat under World ([docs](docs/agent-log/spec.md)).
+- The run explorer lists each agent's turns again, as it reads the same Inspect log ([docs](docs/explorer/README.md)).
+- The record's transcript puts a monitor's verdict on a model call in that call's row, where it sat among the unplaced verdicts ([docs](docs/agent-log/spec.md)).
+
+## [434] - 2026-11-27: Three monitors read whole trajectories, over stored runs
+
+### Added
+
+- The monitor `agent_trajectory_monitor` rates each agent's whole trajectory, its subagents' steps included, to compare strategies when an attack is split across agents ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_summary_monitor` has each agent's trajectory summarized, then rates the summaries together, so it can see what no single agent's steps show ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_trajectory_monitor` rates every agent's steps together in one prompt, in the order they happened, as the reference the other two are compared against ([docs](docs/trajectory-monitors.md)).
+- The monitor command `make monitor` runs any monitors again over a stored run, changing nothing of it, and writes their scores and cost ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+- The monitor role `trajectory_monitor` puts the trajectory monitors on the untrusted agent's model, so their results are untrusted monitoring until it names a trusted model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The record holds each summary the team monitor's summarizer wrote, as a `monitor_summary` event, so what that monitor rated can be read back ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+
+### Changed
+
+- The monitor now calls the model of the role its entry names, where each called the trusted monitor's, so monitors can differ in model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The model gateway's core now records the dollars the provider reports for each call it makes, single or batch, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+
+## [433] - 2026-11-23: The model-selection covert briefs compose as the efficiency push's
+
+### Changed
+
+- The scenario composes the model-selection task's covert briefs from fragments, two of them the efficiency push's own, so both tasks' attack briefs share one structure ([docs](docs/run-config.md#prompts)).
+- The scenario tells attack agents of the model-evaluation runs their covert briefs in new words, so those attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
+
+## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
+
+### Fixed
+
+- The run publish keeps the badge IAM signs for a workload when it appears in an Authorization header, so such runs reach storage instead of being refused ([docs](docs/run-storage.md#the-scan)).
+
+## [391] - 2026-11-22: A replay export holds each run's events and outcomes
+
+### Added
+
+- The run reader now writes `replay.json` for each graded run, its events, references, outcomes and taxonomy counts, which a replay page is built from ([docs](docs/run-reader.md#replay-export)).
 
 ## [429] - 2026-11-22: An agent hands a task to a subagent with delegate
 
