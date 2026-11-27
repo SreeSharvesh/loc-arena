@@ -80,7 +80,6 @@ def dependency(guard: Guard):  # noqa: ANN201 - a FastAPI dependency callable
             raise HTTPException(exc.status, exc.guidance) from None
         except IamError as exc:
             raise HTTPException(exc.status, {"error": exc.code, "message": str(exc)}) from None
-        request.state.iam_decision = decision
         request.state.iam_principal = None if decision is None else decision.principal
         request.state.iam_decision_id = None if decision is None else decision.decision_id
 

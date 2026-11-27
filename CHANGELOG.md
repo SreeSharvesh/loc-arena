@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [461] - 2026-11-28: IAM drops client calls and a request field nobody uses
+
+### Removed
+
+- IAM's client no longer has four calls nothing made, and its guard no longer sets a request field nothing read.
+
 ## [459] - 2026-11-28: Six comments say what the code beside them does
 
 ### Changed
