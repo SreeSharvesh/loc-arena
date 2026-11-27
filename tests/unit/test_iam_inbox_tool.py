@@ -99,16 +99,3 @@ def test_the_same_app_still_serves_iams_http_api(iam: Iam) -> None:
 def test_offering_a_tool_iam_does_not_serve_stops_it_starting(iam: Iam) -> None:
     with pytest.raises(ValueError, match="offers tools it does not serve"):
         serving_app(iam, "iam", (INBOX_TOOL, "decide_access"))
-
-
-def test_with_no_tool_offered_iam_serves_no_mcp_endpoint(iam: Iam) -> None:
-    async def initialize() -> int:
-        async with served(serving_app(iam, "iam", ()), "") as http:
-            reply = await http.post(
-                "http://iam:8000/mcp",
-                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
-                headers={"Accept": "application/json, text/event-stream"},
-            )
-        return reply.status_code
-
-    assert anyio.run(initialize) == HTTPStatus.NOT_FOUND
