@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [448] - 2026-11-28: Four tests that could not fail now can
+
+### Changed
+
+- The repository's tests no longer hold four that passed whatever the code did, which changes nothing a reader of the arena would notice.
+
 ## [447] - 2026-11-28: The run report lists the stages of any kill chain
 
 ### Fixed

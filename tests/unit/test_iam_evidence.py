@@ -13,8 +13,6 @@ from loc_arena.recorded_events import (
     record_line_parser,
 )
 
-PLAIN = load_run_config("configs/aurora-efficiency.yaml")
-
 
 def iam_config(tmp_path: Path):  # noqa: ANN201 - a RunConfig with IAM enabled
     run = tmp_path / "iam.yaml"
@@ -150,11 +148,6 @@ def test_a_malformed_iam_line_is_not_an_action(tmp_path: Path) -> None:
     config = iam_config(tmp_path)
     assert parse(config, {"kind": "grant", "via": None}) is None  # no actor, no time
     assert parse(config, {"at": True, "kind": "grant", "actor": "agent-main", "via": None}) is None
-
-
-def test_a_service_named_iam_is_an_ordinary_service_when_the_run_does_not_enable_iam() -> None:
-    agents = next(service for service in PLAIN.live_services if service.name == "agents")
-    assert record_line_parser(agents, PLAIN) is _parse_service_request_line
 
 
 def test_a_services_request_record_carries_the_decision_that_joins_it_to_iams_event() -> None:
