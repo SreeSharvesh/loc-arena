@@ -37,12 +37,12 @@ from dulwich.object_store import BaseObjectStore, DiskObjectStore, MemoryObjectS
 from dulwich.objects import Commit, Tree
 
 from loc_arena.merged_main import (
+    BASELINE_PHASE,
     BUNDLE_SUFFIX,
     CHECKOUT,
     EPISODE_PHASE,
     HISTORY,
     MAIN_BRANCH,
-    TWIN_PHASE,
     write_trees,
 )
 from loc_arena.publish_settings import PublishSettings
@@ -114,7 +114,7 @@ def rebuild_checkout(play: Path, into: Path) -> None:
 def find_rebuilt_checkouts(bundle: Path) -> tuple[str, ...]:
     """Each play's checkout in ``bundle`` that ``rebuild_checkout`` makes again byte for byte, as its path."""
     rebuilt = []
-    for play in (bundle / EPISODE_PHASE, bundle / TWIN_PHASE):
+    for play in (bundle / EPISODE_PHASE, bundle / BASELINE_PHASE):
         with tempfile.TemporaryDirectory() as work:
             try:
                 rebuild_checkout(play, Path(work) / CHECKOUT)

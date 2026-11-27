@@ -46,7 +46,7 @@ class _Frozen(BaseModel):
 
 
 class ContainerCost(_Frozen):
-    """One container of the run; a service the honest twin's renewal recreated is one container here."""
+    """One container of the run; a service the honest baseline's renewal recreated is one container here."""
 
     memory_rest_bytes: int | None  # once the services were healthy; none for one that was not running then
     memory_peak_bytes: int

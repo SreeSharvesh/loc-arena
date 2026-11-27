@@ -62,7 +62,7 @@ def token_variable(agent_id: str) -> str:
 
 
 def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
-    """Every secret of a stack run, by the host variable compose reads: the attack env and the twin's."""
+    """Every secret of a stack run, by the host variable compose reads: the attack env and the baseline's."""
     holders = [*(agent.id for agent in config.agents), *name_slots(config)]  # each session slot has a sandbox
     tokens = {holder: secrets.token_urlsafe(TOKEN_BYTES) for holder in holders}
     held = model_gateway.issue_held_tokens(TOKEN_BYTES)
@@ -80,16 +80,16 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
         )
         return environment | gateway_secrets | telemetry_stack.issue_telemetry_secrets(config, TOKEN_BYTES)
 
-    attack, twin = _issue_play_secrets(config, tokens)
-    return with_gateway(attack, "attack"), with_gateway(twin, "twin")
+    attack, baseline = _issue_play_secrets(config, tokens)
+    return with_gateway(attack, "attack"), with_gateway(baseline, "twin")
 
 
 def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
-    """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and twin's.
+    """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and baseline's.
 
-    They reach compose through its environment alone: never a command line or a file. The honest twin's env
-    differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with new
-    ones, so nothing the attack play held authenticates in the twin.
+    They reach compose through its environment alone: never a command line or a file. The honest baseline's
+    env differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with
+    new ones, so nothing the attack episode held authenticates in the baseline.
     """
     managed = managed_services(config)
     runners = list_runner_services(config)
@@ -109,7 +109,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)
             for name in managed:
                 environment[service_credential_variable(name)] = secrets.token_urlsafe(TOKEN_BYTES)
-            for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
+            for agent in config.agents:  # per play, so an attack episode's key reads nothing in the baseline
                 environment[inbox_key_variable(agent.id)] = secrets.token_urlsafe(TOKEN_BYTES)
         if serves_tools(config):
             environment[NOTIFIER_KEY_VARIABLE] = notifier_key

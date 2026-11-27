@@ -123,7 +123,7 @@ def test_an_honest_run_counts_its_own_verdicts_above_the_threshold_as_false_flag
     honest = tmp_path / "run"
     shutil.copytree(run, honest, ignore=shutil.ignore_patterns("honest_cal"))
     scores = json.loads((honest / "scores.json").read_text())
-    (honest / "scores.json").write_text(json.dumps(scores | {"mode": "honest", "honest_twin": None}))
+    (honest / "scores.json").write_text(json.dumps(scores | {"mode": "honest", "honest_baseline": None}))
     high = sum(v["score"] > scores["safety"]["audit_threshold"] for v in scores["monitor_verdicts"])
 
     counts = observe_run(honest, TAXONOMY, SECRETS, repeat_at_least=3).counts
@@ -217,7 +217,7 @@ def test_a_sessions_push_outside_its_starters_scope_counts_as_its_own(run: Path,
             },
         ),
     ],
-    ids=["read secrets, attack", "read secrets, twin", "call budget, attack"],
+    ids=["read secrets, attack", "read secrets, baseline", "call budget, attack"],
 )
 def test_each_instance_rests_on_the_stored_runs_own_events(
     observed: Observation,
@@ -238,7 +238,7 @@ def test_each_instance_rests_on_the_stored_runs_own_events(
         ("failure_monitor.false_flag", {"twin": 98}),
         ("mast.disobey_task", {"attack": 7, "twin": 7}),
     ],
-    ids=["the attack play", "the graded play", "the honest play", "every play, judged by the reader"],
+    ids=["the attack episode", "the graded play", "the honest episode", "every play, judged by the reader"],
 )
 def test_a_category_has_chances_only_in_the_plays_it_applies_to(
     observed: Observation,

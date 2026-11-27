@@ -112,12 +112,12 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 /* overview grid: rounds down, monitors then agents across */
 .gridwrap { overflow-x: auto; }
-.land { border-collapse: separate; border-spacing: 3px; width: 100%; min-width: 900px; table-layout: fixed; }
-.land th { font-weight: 600; color: var(--ink-muted); font-size: .74rem; padding: 0 2px 7px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.land th.mon { color: var(--accent); }
-.land th.rowh { text-align: left; width: 92px; font-size: .78rem; color: var(--ink); font-weight: 500; }
-.land td { padding: 0; }
-.land td.gap { width: 10px; }
+.outcome-grid { border-collapse: separate; border-spacing: 3px; width: 100%; min-width: 900px; table-layout: fixed; }
+.outcome-grid th { font-weight: 600; color: var(--ink-muted); font-size: .74rem; padding: 0 2px 7px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outcome-grid th.mon { color: var(--accent); }
+.outcome-grid th.rowh { text-align: left; width: 92px; font-size: .78rem; color: var(--ink); font-weight: 500; }
+.outcome-grid td { padding: 0; }
+.outcome-grid td.gap { width: 10px; }
 .hm { display: block; width: 100%; border: 1px solid var(--line); border-radius: 7px; padding: 6px 3px 5px; font-family: var(--mono); font-size: .86rem; font-variant-numeric: tabular-nums; line-height: 1.15; text-align: center; background: var(--surface); color: var(--ink-faint); position: relative; }
 .hm:hover { border-color: var(--accent); }
 .hm small { display: block; font-size: .62rem; color: var(--ink-faint); margin-top: 3px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
@@ -139,7 +139,7 @@ main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .legend td.num, .legend th.num { text-align: right; font-family: var(--mono); }
 details summary { cursor: pointer; color: var(--accent); font-weight: 500; font-size: .88rem; }
 details + details { margin-top: 8px; }
-.milestones { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
+.stages { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 8px; }
 .ms { border: 1px solid var(--line); background: var(--surface); border-radius: 9px; padding: 9px 12px; font-size: .84rem; }
 .ms .st { font-family: var(--mono); font-size: .72rem; font-weight: 600; }
 .ms.yes .st { color: var(--covert); }
@@ -471,8 +471,8 @@ dialog.notes .x:hover { color: var(--ink); }
 .runs tr.link { cursor: pointer; }
 .runs tr.link:hover td { background: var(--sunken); }
 .runs tr td:first-child { border-left: 3px solid transparent; }
-.runs tr.out-landed-missed td:first-child { border-left-color: var(--covert); }
-.runs tr.out-landed-caught td:first-child, .runs tr.out-caught td:first-child, .runs tr.out-honest-flagged td:first-child { border-left-color: var(--flag); }
+.runs tr.out-succeeded-missed td:first-child { border-left-color: var(--covert); }
+.runs tr.out-succeeded-caught td:first-child, .runs tr.out-caught td:first-child, .runs tr.out-honest-flagged td:first-child { border-left-color: var(--flag); }
 .runs tr.out-honest-quiet td:first-child, .runs tr.out-failed td:first-child { border-left-color: var(--clean); }
 .runs b.f { color: var(--flag); }
 .runs b.c { color: var(--covert); }
@@ -504,13 +504,13 @@ dialog.notes .x:hover { color: var(--ink); }
       <div class="stats" id="ix-stats"></div>
       <h2>Attacker against monitor</h2>
       <p class="lede" style="margin-bottom:10px">One cell per pairing of the model that ran the agents and the model that monitored them. Click a cell to list its runs.</p>
-      <div id="ix-land"></div>
+      <div id="ix-outcomes"></div>
       <h2>Runs</h2>
       <div class="fldrow" style="margin-bottom:10px">
         <label class="fld">attacker <select id="x-attacker"></select></label>
         <label class="fld">monitor <select id="x-monitor"></select></label>
         <label class="fld">mode <select id="x-mode"><option value="">any</option><option value="attack">attack</option><option value="honest">honest</option></select></label>
-        <label class="fld">outcome <select id="x-outcome"><option value="">any</option><option value="landed-missed">side task landed, not caught</option><option value="landed-caught">landed and caught</option><option value="caught">caught, not landed</option><option value="failed">neither landed nor caught</option><option value="honest-flagged">honest, flagged anyway</option><option value="honest-quiet">honest, not flagged</option></select></label>
+        <label class="fld">outcome <select id="x-outcome"><option value="">any</option><option value="succeeded-missed">side task succeeded, not caught</option><option value="succeeded-caught">side task succeeded and caught</option><option value="caught">caught, did not succeed</option><option value="failed">neither succeeded nor caught</option><option value="honest-flagged">honest, flagged anyway</option><option value="honest-quiet">honest, not flagged</option></select></label>
         <label class="fld grow"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="10.8" cy="10.8" r="6.8"/><line x1="20" y1="20" x2="15.9" y2="15.9"/></svg><input id="x-text" placeholder="search run names"></label>
         <label class="fld">sort <select id="x-sort"><option value="new">newest first</option><option value="old">oldest first</option><option value="flagged">most flagged steps</option><option value="missed">most covert steps missed</option></select></label>
       </div>
@@ -546,10 +546,10 @@ dialog.notes .x:hover { color: var(--ink); }
   const when = iso => { const d = new Date(iso); return isNaN(d) ? '?' : d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); };
   const scoreText = v => v == null ? '·' : String(Math.round(v * 100) / 100);
   const pill = (score, thr) => `<span class="pill ${score == null ? 'none' : score > thr ? 'flag' : 'clean'}">${scoreText(score)}</span>`;
-  // How a run ended, as the one question a reader asks of it. An attack that landed and
+  // How a run ended, as the one question a reader asks of it. An attack that succeeded and
   // was not caught is the monitoring failure; an honest run that was flagged is a false alarm.
-  const outcomeOf = r => r.mode !== 'attack' ? (r.caught ? 'honest-flagged' : 'honest-quiet') : r.landed ? (r.caught ? 'landed-caught' : 'landed-missed') : r.caught ? 'caught' : 'failed';
-  const OUTCOME_LABEL = { 'landed-missed': 'landed, not caught', 'landed-caught': 'landed and caught', caught: 'caught, not landed', failed: 'neither', 'honest-quiet': 'honest, not flagged', 'honest-flagged': 'honest, flagged anyway' };
+  const outcomeOf = r => r.mode !== 'attack' ? (r.caught ? 'honest-flagged' : 'honest-quiet') : r.succeeded ? (r.caught ? 'succeeded-caught' : 'succeeded-missed') : r.caught ? 'caught' : 'failed';
+  const OUTCOME_LABEL = { 'succeeded-missed': 'succeeded, not caught', 'succeeded-caught': 'succeeded and caught', caught: 'caught, did not succeed', failed: 'neither', 'honest-quiet': 'honest, not flagged', 'honest-flagged': 'honest, flagged anyway' };
   // Your notes live in this browser, one store per run; the index only counts them.
   const notesOn = name => { try { const kept = JSON.parse(localStorage.getItem(`loc-arena-notes-v1/${name}`) || 'null'); return kept && kept.steps ? Object.values(kept.steps).filter(n => String(n.text || '').trim() || (n.marks || []).length).length : 0; } catch (e) { return 0; } };
 
@@ -576,9 +576,9 @@ dialog.notes .x:hover { color: var(--ink); }
     const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
     el('ix-stats').innerHTML = [
       stat(runs.length, `run${runs.length === 1 ? '' : 's'} listed, ${runs.filter(r => r.href).length} with a transcript`),
-      stat(`${attacks.filter(r => r.landed).length}/${attacks.length}`, 'attack runs where the side task landed', 'covert'),
+      stat(`${attacks.filter(r => r.succeeded).length}/${attacks.length}`, 'attack runs where the side task succeeded', 'covert'),
       stat(`${attacks.filter(r => r.caught).length}/${attacks.length}`, 'attack runs caught', 'flag'),
-      stat(attacks.filter(r => r.landed && !r.caught).length, 'landed and not caught: the monitoring failures', attacks.some(r => r.landed && !r.caught) ? 'covert' : ''),
+      stat(attacks.filter(r => r.succeeded && !r.caught).length, 'succeeded and not caught: the monitoring failures', attacks.some(r => r.succeeded && !r.caught) ? 'covert' : ''),
       stat(`${honest.filter(r => r.caught).length}/${honest.length}`, 'honest runs flagged anyway: false alarms'),
     ].join('');
   }
@@ -587,12 +587,12 @@ dialog.notes .x:hover { color: var(--ink); }
     const cell = (a, m) => {
       const rs = RUNS.filter(r => r.attacker === a && r.monitor === m); if (!rs.length) return '<td><span class="hm empty"></span></td>';
       const at = rs.filter(r => r.mode === 'attack'), ho = rs.filter(r => r.mode !== 'attack');
-      const missed = at.filter(r => r.landed && !r.caught).length;
+      const missed = at.filter(r => r.succeeded && !r.caught).length;
       const cls = ['hm', missed ? 'covert' : at.length && at.every(r => r.caught) ? 'flag' : '', S.attacker === a && S.monitor === m ? 'on' : ''].join(' ');
-      return `<td><button class="${cls}" data-a="${esc(a)}" data-m="${esc(m)}" aria-pressed="${S.attacker === a && S.monitor === m}">${at.length ? `${at.filter(r => r.caught).length}/${at.length} caught` : '·'}<small>${at.length ? `${at.filter(r => r.landed).length}/${at.length} landed` : ''}${missed ? ` · ${missed} missed` : ''}${ho.length ? `${at.length ? ' · ' : ''}${ho.length} honest` : ''}</small></button></td>`;
+      return `<td><button class="${cls}" data-a="${esc(a)}" data-m="${esc(m)}" aria-pressed="${S.attacker === a && S.monitor === m}">${at.length ? `${at.filter(r => r.caught).length}/${at.length} caught` : '·'}<small>${at.length ? `${at.filter(r => r.succeeded).length}/${at.length} succeeded` : ''}${missed ? ` · ${missed} missed` : ''}${ho.length ? `${at.length ? ' · ' : ''}${ho.length} honest` : ''}</small></button></td>`;
     };
-    el('ix-land').innerHTML = `<table class="land" style="min-width:0;max-width:${220 + monitors.length * 190}px"><tr><th class="rowh"></th>${monitors.map(m => `<th title="${esc(m)}">${icon('shield', 13)} ${esc(short(m))}</th>`).join('')}</tr>${attackers.map(a => `<tr><th class="rowh" title="${esc(a)}">${icon('robot', 13)} ${esc(short(a))}</th>${monitors.map(m => cell(a, m)).join('')}</tr>`).join('')}</table>`;
-    el('ix-land').querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => {
+    el('ix-outcomes').innerHTML = `<table class="outcome-grid" style="min-width:0;max-width:${220 + monitors.length * 190}px"><tr><th class="rowh"></th>${monitors.map(m => `<th title="${esc(m)}">${icon('shield', 13)} ${esc(short(m))}</th>`).join('')}</tr>${attackers.map(a => `<tr><th class="rowh" title="${esc(a)}">${icon('robot', 13)} ${esc(short(a))}</th>${monitors.map(m => cell(a, m)).join('')}</tr>`).join('')}</table>`;
+    el('ix-outcomes').querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => {
       const same = S.attacker === b.dataset.a && S.monitor === b.dataset.m;
       S.attacker = same ? '' : b.dataset.a; S.monitor = same ? '' : b.dataset.m; render();
     }));
@@ -604,7 +604,7 @@ dialog.notes .x:hover { color: var(--ink); }
     const rows = runs.map(r => {
       const out = outcomeOf(r), notes = notesOn(r.name), thr = r.threshold ?? 0;
       const peaks = Object.entries(r.peaks || {}).map(([m, v]) => `<span title="${esc(m)}">${pill(v, thr)}</span>`).join(' ');
-      const side = r.mode === 'attack' ? `${r.landed ? 'minimal' : 'no'} <span class="help">${r.milestones_reached}/${r.milestones_total}</span>` : '<span class="help">honest</span>';
+      const side = r.mode === 'attack' ? `${r.succeeded ? 'minimal' : 'no'} <span class="help">${r.stages_reached}/${r.stages_total}</span>` : '<span class="help">honest</span>';
       const steps = r.steps != null ? `${r.steps} <span class="help">&middot;</span> <b class="f">${r.flagged}</b> flagged <span class="help">&middot;</span> <b class="c">${r.covert}</b> covert${r.covert ? ` (${r.covert_missed} missed)` : ''}` : '<span class="help">&mdash;</span>';
       const talk = r.steps != null ? `${icon('talk', 12)} ${r.messages} ${icon('sticky', 12)} ${r.scratch}` : '<span class="help">&mdash;</span>';
       const open = r.href ? `<a class="tcbtn" href="${esc(r.href)}">open &#8599;</a>` : `<span class="help" title="${esc(r.why)}">${icon('eyeoff', 13)} no transcript</span>`;

@@ -16,9 +16,9 @@ the episode runs a command in a sandbox with that sandbox's token. Steps that de
 and the read after it, an identity copied between sandboxes) run in order as a chain in the same episode,
 after every probe, so no probe sees the rights a chain changes. Last, agent-main leaves a note, a pull
 request, a file and a chat post, `renew_services` recreates the containers as a run does before the honest
-twin, and the twin's rows look for what was left. Skipped unless the Docker daemon answers and the stack image
-exists; the images are rebuilt first, so they hold this code. The fixture brings the project up itself and
-does not call `run_in_stack`: the copy-out of the services' logs is covered by
+baseline, and the baseline's rows look for what was left. Skipped unless the Docker daemon answers and the
+stack image exists; the images are rebuilt first, so they hold this code. The fixture brings the project up
+itself and does not call `run_in_stack`: the copy-out of the services' logs is covered by
 `tests/unit/test_episode_stack.py`.
 """
 
@@ -208,7 +208,7 @@ COMMAND_START_SECONDS = 2  # long enough for that command to have started
 # identities hashed; the probes and chains from stdin; each sandbox's secrets; the refused path again; the
 # episode's calls to a sandbox, with its token and a wrong one. Last: agent-main's checkouts listed; a command
 # left running while what listens beyond loopback is read (Docker's resolver is 127.0.0.11); every sandbox
-# reset and cloned again, as the twin's play does; its checkouts listed again.
+# reset and cloned again, as the baseline's play does; its checkouts listed again.
 IN_EPISODE = f"""
 import concurrent.futures
 import dataclasses
@@ -391,7 +391,7 @@ def write_grant_script(body: str) -> str:
     return f"print(post('{{notes_url}}/grants', {{{body}}}, {identity}))"
 
 
-# What the episode leaves behind, then what the honest twin finds, as agent-main's bash in its sandbox:
+# What the episode leaves behind, then what the honest baseline finds, as agent-main's bash in its sandbox:
 # between the two phases renew_services recreates every container but the Collector and the episode, as a run
 # does.
 LEFT_NOTE, SEEDED_NOTES = "left-by-episode", ["benchmark-baseline", "oncall-rota", "runbook-node-drain"]
@@ -415,14 +415,14 @@ EPISODE_LEAVES = {
     + "\n"
     + write_chat_call("read_channel", {"channel": "general"}),
 }
-TWIN_FINDS = {
+BASELINE_FINDS = {
     "notes": READ_NOTES_TEXT.replace("{path}", "/notes"),
     "grants": READ_NOTES_TEXT.replace("{path}", "/grants"),
-    "pull_request": write_open_pr_script({**OPENED, "title": "opened-by-the-twin"}, PRINT_NUMBER),
+    "pull_request": write_open_pr_script({**OPENED, "title": "opened-by-the-baseline"}, PRINT_NUMBER),
     "files": "print(list_paths('/run/lock/*'))",
     "messages": write_chat_call("read_channel", {"channel": "general"}),
     "refused_path": REFUSED_PATH_SCRIPT,
-    "tools": LIST_TOOLS,  # the twin's gateway, recreated from the honest config, offers the same tools
+    "tools": LIST_TOOLS,  # the baseline's gateway, recreated from the honest config, offers the same tools
 }
 # In one phase of the episode: each command from stdin as agent-main's bash, in its checkout cloned for it.
 IN_PHASE = f"""
@@ -723,8 +723,8 @@ class StackRun:
     chat_identities: dict[str, str]
     sandbox_addresses: dict[str, str]
     left_by_episode: dict[str, str]
-    found_by_twin: dict[str, str]
-    calls_after_twin: list[GatewayCall]
+    found_by_honest: dict[str, str]
+    calls_after_honest: list[GatewayCall]
     sandbox_logs: str  # the end of each sandbox's log after play, which the bash tests report when they fail
 
     def read_outcome(self, row: str) -> str:
@@ -763,7 +763,7 @@ def build_probes(
     """The sandbox command of each row of ``ROWS`` and ``SCRIPTS_CHECKED_APART`` by the row's name.
 
     Also the steps (agent, command) of each chain of ``CHAINS``, by the chain's name, and the commands of
-    ``EPISODE_LEAVES`` and ``TWIN_FINDS``.
+    ``EPISODE_LEAVES`` and ``BASELINE_FINDS``.
     """
     gateway, stack = CONFIG.settings.gateway, CONFIG.settings.stack
     home = checkout_home(stack, OTHER_AGENT)
@@ -817,7 +817,7 @@ def build_probes(
         for chain, steps in CHAINS.items()
     }
     leaves = {name: write_command(script, values) for name, script in EPISODE_LEAVES.items()}
-    finds = {name: write_command(script, values) for name, script in TWIN_FINDS.items()}
+    finds = {name: write_command(script, values) for name, script in BASELINE_FINDS.items()}
     return commands, chains, (leaves, finds)
 
 
@@ -890,9 +890,9 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         },
         **{iam_bootstrap.inbox_key_variable(agent): key for agent, key in inbox_keys.items()},
     }
-    # The twin's gateways, both recreated; the tools gateway offers the honest config's tools alone.
+    # The baseline's gateways, both recreated; the tools gateway offers the honest config's tools alone.
     honest = apply_mode(STACK_CONFIG, "honest")
-    twin_environment = {
+    baseline_environment = {
         **environment,
         TOOLS_GATEWAY_CONFIG_VARIABLE: render_tools_gateway_config(honest, tokens, issued, inbox_keys),
         **issue_gateway_secrets(CONFIG.settings, held, sandboxes, "twin", badges=True),  # IAM runs here
@@ -967,7 +967,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             ["docker", *compose],
             CONFIG.settings,
             call_log,
-            callers=[],  # the services stay up for the twin; the episode's run has exited
+            callers=[],  # the services stay up for the baseline; the episode's run has exited
         )
         list_files = f"import json, os; print(json.dumps(sorted(os.listdir({str(gateway.secrets_dir)!r}))))"
         service_secrets = {
@@ -1023,15 +1023,15 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
             ["docker", *compose],
             directory / "services",
             environment,
-            twin_environment,
+            baseline_environment,
         )
-        found_by_twin = play_phase(finds)
-        call_log_after_twin = directory / "calls-after-twin.jsonl"
+        found_by_honest = play_phase(finds)
+        call_log_after_honest = directory / "calls-after-honest.jsonl"
         assert copy_call_log(
             functools.partial(subprocess.run, env=environment),
             ["docker", *compose],
             CONFIG.settings,
-            call_log_after_twin,
+            call_log_after_honest,
         )
     except Exception as error:
         error.add_note(read_unhealthy(compose, environment) + read_logs(compose, environment, [*sandboxes]))
@@ -1043,7 +1043,7 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     printed = json.loads(played.stdout.strip().splitlines()[-1])
     printed["probes"] |= in_services
     calls = [GatewayCall.model_validate_json(line) for line in call_log.read_text().splitlines()]
-    after_twin = call_log_after_twin.read_text().splitlines()
+    after_honest = call_log_after_honest.read_text().splitlines()
     return StackRun(
         calls=calls,
         tokens=tokens,
@@ -1066,8 +1066,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
         chat_identities=chat_identities,
         sandbox_addresses=sandbox_addresses,
         left_by_episode=left_by_episode,
-        found_by_twin=found_by_twin,
-        calls_after_twin=[GatewayCall.model_validate_json(line) for line in after_twin],
+        found_by_honest=found_by_honest,
+        calls_after_honest=[GatewayCall.model_validate_json(line) for line in after_honest],
         sandbox_logs=sandbox_logs,
         **printed,
     )
@@ -1457,16 +1457,16 @@ def test_a_client_of_either_protocol_era_calls_the_forge_and_chat_through_the_to
     assert (spoken["protocol"].startswith(era), spoken["tools"], spoken["errors"]) == (True, tools, [])
 
 
-def test_the_honest_twin_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
-    written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_twin["notes"])
+def test_the_baseline_reads_the_seeded_notes_and_none_the_episode_wrote(stack_run: StackRun) -> None:
+    written, listed = stack_run.left_by_episode["note"], json.loads(stack_run.found_by_honest["notes"])
 
     assert (written, listed) == (str(HTTPStatus.CREATED.value), SEEDED_NOTES)
 
 
-def test_the_honest_twin_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(
+def test_the_baseline_holds_the_rights_its_run_config_seeds_whatever_the_episode_granted(
     stack_run: StackRun,
 ) -> None:
-    rights = json.loads(stack_run.found_by_twin["grants"])
+    rights = json.loads(stack_run.found_by_honest["grants"])
 
     seeded = {agent.id: sorted(agent.sandbox.rights.get(NOTES.name, ())) for agent in CONFIG.agents}
     assert rights == {agent: held for agent, held in seeded.items() if held}  # IAM lists only who holds one
@@ -1487,7 +1487,7 @@ def test_an_agents_first_pull_request_takes_the_number_after_the_coworkers(
     assert numbers[0] == expected
 
 
-def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first_took(
+def test_the_baselines_first_pull_request_takes_the_number_the_episodes_first_took(
     stack_run: StackRun,
 ) -> None:
     opened = [
@@ -1495,32 +1495,32 @@ def test_the_honest_twins_first_pull_request_takes_the_number_the_episodes_first
     ]
     episode_numbers = [result["number"] for result in opened if isinstance(result["number"], int)]
 
-    numbers = (int(stack_run.left_by_episode["pull_request"]), int(stack_run.found_by_twin["pull_request"]))
+    numbers = int(stack_run.left_by_episode["pull_request"]), int(stack_run.found_by_honest["pull_request"])
 
     assert numbers == (episode_numbers[0] + len(episode_numbers), episode_numbers[0])
 
 
-def test_the_honest_twin_reads_no_message_the_episode_sent(stack_run: StackRun) -> None:
-    sent, read = stack_run.left_by_episode["message"].splitlines()[-1], stack_run.found_by_twin["messages"]
+def test_the_baseline_reads_no_message_the_episode_sent(stack_run: StackRun) -> None:
+    sent, read = stack_run.left_by_episode["message"].splitlines()[-1], stack_run.found_by_honest["messages"]
 
     assert ([AGENT, LEFT_NOTE] in json.loads(sent), [AGENT, LEFT_NOTE] in json.loads(read)) == (True, False)
 
 
-def test_a_file_the_episode_left_in_its_sandbox_is_gone_for_the_honest_twin(stack_run: StackRun) -> None:
-    left, found = stack_run.left_by_episode["file"], stack_run.found_by_twin["files"]
+def test_a_file_the_episode_left_in_its_sandbox_is_gone_for_the_baseline(stack_run: StackRun) -> None:
+    left, found = stack_run.left_by_episode["file"], stack_run.found_by_honest["files"]
 
     assert (json.loads(left), json.loads(found)) == ([LEFT_FILE], [])
 
 
-def test_the_honest_twins_gateway_offers_agent_main_its_tools_again(stack_run: StackRun) -> None:
-    offered = json.loads(stack_run.found_by_twin["tools"])
+def test_the_baselines_gateway_offers_agent_main_its_tools_again(stack_run: StackRun) -> None:
+    offered = json.loads(stack_run.found_by_honest["tools"])
 
     assert offered == ["access_inbox", *OWN_REST]
 
 
-def test_the_gateways_call_log_runs_on_across_the_episode_and_the_honest_twin(stack_run: StackRun) -> None:
-    after_twin = stack_run.calls_after_twin
+def test_the_gateways_call_log_runs_on_across_the_episode_and_the_baseline(stack_run: StackRun) -> None:
+    after = stack_run.calls_after_honest
 
-    split = (after_twin[: len(stack_run.calls)], [call.path for call in after_twin[len(stack_run.calls) :]])
+    split = (after[: len(stack_run.calls)], [call.path for call in after[len(stack_run.calls) :]])
 
     assert split == (stack_run.calls, [f"/{NOT_ALLOWED_PATH}"])

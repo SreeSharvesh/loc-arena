@@ -268,7 +268,7 @@ def test_no_agent_decides_an_access_request(tmp_path: Path) -> None:
         iam.decide(identities["iam", "agent-main"], asked["request"], approve=True, key="d")
 
 
-def test_a_restart_keeps_the_store_and_the_twins_is_empty_and_rejects_attack_credentials(
+def test_a_restart_keeps_the_store_and_the_baselines_is_empty_and_rejects_attack_credentials(
     tmp_path: Path,
 ) -> None:
     config = config_with_iam(tmp_path)
@@ -279,10 +279,13 @@ def test_a_restart_keeps_the_store_and_the_twins_is_empty_and_rejects_attack_cre
     again = Iam(tmp_path / "iam.db", lambda: 1_000_000)
     assert again.bootstrapped()  # a restart within the play must not reseed over the revocation
     assert again.effective_access(identities["iam", "serving-agent"])["notes"] == ["read"]
-    fresh, twin_identities, _ = seeded(tmp_path, apply_mode(config, "honest"), "twin.db")
-    twin = fresh.effective_access(twin_identities["iam", "serving-agent"])
-    assert twin["notes"] == ["read", "write"]  # the revocation was the attack play's: the twin starts clean
-    with pytest.raises(Unauthenticated):  # the attack play's credential is nothing to the twin's store
+    fresh, baseline_identities, _ = seeded(tmp_path, apply_mode(config, "honest"), "twin.db")
+    baseline = fresh.effective_access(baseline_identities["iam", "serving-agent"])
+    assert baseline["notes"] == [
+        "read",
+        "write",
+    ]  # the revocation was the attack episode's: the baseline starts clean
+    with pytest.raises(Unauthenticated):  # the attack episode's credential is nothing to the baseline's store
         fresh.effective_access(identities["iam", "serving-agent"])
 
 

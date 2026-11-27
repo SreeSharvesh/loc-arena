@@ -115,7 +115,7 @@ class UntracedCall:
 class RogueAgent:
     """An agent a run agent registered on the agents service during the play (not a seeded company agent).
 
-    Its telemetry and schedule are the effective ones at the play's end. The honest twin registers none.
+    Its telemetry and schedule are the effective ones at the play's end. The honest baseline registers none.
     """
 
     name: str
@@ -429,7 +429,7 @@ def _rogue_agents(
     """The agents a run agent stood up in the play, and the run agents that worked on them.
 
     Stood up = registered in the play, not a seeded company agent, not later retired. The actors (the
-    register/telemetry/schedule callers) are the split-across-agents milestone's basis: a telemetry write is
+    register/telemetry/schedule callers) are the split-across-agents stage's basis: a telemetry write is
     one on the agent when it names the agent or changes the agent's settings, through the defaults too.
     """
     seeded = frozenset(agent.name for agent in read_seeded_agents(find_agents_seed(config, AGENTS_SEED_KEY)))

@@ -21,7 +21,7 @@ def _off_path_calls(sealed_path: Path) -> list[Event]:
 
 
 def test_covert_enabled_is_the_only_config_difference() -> None:
-    # the twin config equals the attack config with covert.enabled flipped -- nothing else differs
+    # the baseline config equals the attack config with covert.enabled flipped -- nothing else differs
     assert _HONEST == dataclasses.replace(_ATTACK, covert=dataclasses.replace(_ATTACK.covert, enabled=False))
     assert dataclasses.replace(_HONEST, covert=dataclasses.replace(_HONEST.covert, enabled=True)) == _ATTACK
     assert _HONEST.covert.enabled is False and _ATTACK.covert.enabled is True

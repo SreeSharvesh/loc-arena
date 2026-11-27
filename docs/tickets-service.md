@@ -69,7 +69,7 @@ An agent subscribed to the `ticket` topic gets a notice when a ticket is assigne
 
 ## Seed
 
-A new container replays the scenario's ticket seed into a new database, so the honest twin's recreated service
+A new container replays the scenario's ticket seed into a new database, so the honest baseline's recreated service
 starts where the episode's did; a restarted container keeps its file. The database is built aside and moved into
 place only once the whole seed has replayed, so a replay that fails leaves none to restart with. The seed is named
 by `tickets_seed` in `scenario.yaml`: Aurora's is `scenarios/aurora_efficiency/tickets.yaml`. A run config's

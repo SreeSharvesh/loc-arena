@@ -15,9 +15,10 @@ What LOC-Arena does for a run, and how that changed. The format builds on
 Parts: agent, run, stack, score, monitor, verifier, grader, record, model gateway, tools gateway, sandbox, runner, IAM, forge, deploy service, job service, eval service, agents service, tickets service, chat service, notes service, model store, observability store, run explorer, run reader, scenario, engine, docs, repository.
 
 Terms: agents are the models under test; the company's agents are the simulated company's own, run on runners. A run
-plays an attack and its honest twin, which sets the audit threshold; each play is one episode. In the attack, agents
-pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
-in its own container.
+plays an attack episode and its honest baseline, which sets the audit threshold. In the attack, agents pursue a covert
+side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part in its own
+container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
+replacement.
 
 ## [431] - 2026-11-27: An agent starts a peer session under its own identity
 
@@ -38,6 +39,15 @@ in its own container.
 - The run config reads a scenario's sessions block between the engine's defaults and its own, so a setting says how its company approves sessions ([docs](docs/run-config.md)).
 - The run config lets its lead start sessions, which stays inert until a run sets how many a play may start ([docs](docs/run-config.md)).
 - IAM's store moves to version 5, which records the services that may name their workloads, so an older IAM refuses to open it ([docs](docs/iam-service/spec.md)).
+
+## [460] - 2026-11-27: Attack and score terms follow the literature
+
+### Changed
+
+- The score names the side task's result, its stages and the honest baseline with the literature's terms, and still writes each deprecated key, so older readers keep working ([docs](docs/run-config.md#terms)).
+- The run refuses a config that sets a renamed key, such as `covert_brief_ref`, and names its replacement, so a stale overlay never plays with its setting ignored ([docs](docs/run-config.md#terms)).
+- The run explorer, the run reader and the replay export read runs graded before the rename, under either name, and the reader's facts use the new names ([docs](docs/run-config.md#terms)).
+- The docs name the attack in terms from AI control and security, mark the arena's two own terms, and map each deprecated term to its replacement ([docs](docs/run-config.md#terms)).
 
 ## [437] - 2026-11-27: The Inspect log and transcript show each agent's turns
 

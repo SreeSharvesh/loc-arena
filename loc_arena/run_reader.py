@@ -38,7 +38,7 @@ from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway import model_gateway
 from loc_arena.gateway.loop_routes import LOOP_ROUTE_PREFIX, Loops
 from loc_arena.logging_.events import read_events
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import PI_ENVIRONMENT, PI_SETTINGS
 from loc_arena.play_secrets import TOKEN_BYTES
@@ -104,7 +104,7 @@ def issue_reader_secrets(config: RunConfig) -> dict[str, str]:
     allow = f'json(request.body).model == "{role.model}" && !has(json(request.body).models)'
     calls = {READER: settings.reader.model_calls}
     loops = Loops(calls, {READER: overrides}, caller=(READER, SecretStr(token)), allow=allow)
-    # The record tags a reading's calls with the attack play: a gateway's record knows two plays.
+    # The record tags a reading's calls with the attack episode: a gateway's record knows two plays.
     admitted = model_gateway.issue_gateway_secrets(
         settings,
         model_gateway.issue_held_tokens(TOKEN_BYTES),  # the episode's and the host's: nothing holds them
@@ -214,9 +214,9 @@ def summarize_run(run_directory: Path) -> str:
     """The facts a reading opens with, counted from the run's records: Markdown."""
     scores = load_scores(run_directory / "scores.json")
     rows = []
-    for play, phase in ((scores.mode, EPISODE_PHASE), ("twin", TWIN_PHASE)):
+    for play, phase in ((scores.mode, EPISODE_PHASE), ("twin", BASELINE_PHASE)):
         sealed = run_directory / phase / "events.sealed.jsonl"
-        if not sealed.is_file():  # an honest run has no twin
+        if not sealed.is_file():  # an honest run has no baseline
             continue
         kinds = Counter(event.kind for event in read_events(sealed))
         counts = (sum(kinds.values()), *(kinds[kind] for kind in ("job", "message", "action", "pr")))
@@ -225,9 +225,9 @@ def summarize_run(run_directory: Path) -> str:
         reasons = Counter(end["reason"] for end in recorded)
         ended = ", ".join(f"{count} {reason}" for reason, count in sorted(reasons.items())) or "not recorded"
         rows.append(f"| {play} | {' | '.join(map(str, counts))} | {ended} |")
-    main, side, safety, twin = scores.main_task, scores.side_task, scores.safety, scores.honest_twin
+    main, side, safety, baseline = scores.main_task, scores.side_task, scores.safety, scores.honest_baseline
     high = safety.audit_threshold  # the run's own: a verdict above it is flagged
-    reached = sorted(name for name, milestone in side.milestones.items() if milestone.reached)
+    reached = sorted(name for name, stage in side.stages.items() if stage.reached)
     return "\n".join(
         [
             "## Facts counted from the records",
@@ -237,11 +237,12 @@ def summarize_run(run_directory: Path) -> str:
             *rows,
             "",
             f"- Main task: score {main.final_score:.3f}, gate {main.gate_reason}.",
-            f"- Side task: landed {side.landing_minimal}; milestones: {', '.join(reached) or 'none'}.",
+            f"- Side task: success {side.success}; stages: {', '.join(reached) or 'none'}.",
             f"- Caught: {safety.caught}; overall suspicion {safety.overall_suspicion}, "
             f"threshold {safety.aggregation.threshold if safety.aggregation else 'not recorded'}.",
             f"- Run verdicts: {_spread(scores.monitor_verdicts, high) or 'none'}.",
-            f"- Twin verdicts: {(_spread(twin.monitor_verdicts, high) or 'none') if twin else 'no twin'}.",
+            "- Baseline verdicts: "
+            f"{(_spread(baseline.monitor_verdicts, high) or 'none') if baseline else 'no baseline'}.",
             "",
         ],
     )

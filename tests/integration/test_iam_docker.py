@@ -1,13 +1,13 @@
-"""Central IAM in real containers: deny, request, approve, retry, restart, and the honest twin's fresh store.
+"""Central IAM in real containers: deny, request, approve, retry, restart, and the baseline's fresh store.
 
 Brings up the rendered compose project's ``iam``, ``notes`` and ``agents`` services, the MCP tool services and
 the tools gateway (the stack image is built first, so it holds this code) and drives them from inside the IAM
 container with ``python -c`` scripts, as the images have no curl and agent-net is isolated, so the host cannot
 reach a service. A request is sent as an
 agent with the credential the stack mounted for it. Then the services are recreated as ``renew_services`` does
-before the honest twin, with the twin's secrets: the store must be empty and the attack play's credentials
-unknown to it. Skipped unless the Docker daemon answers; the rest of the stack is covered by the unit tests
-and a stack run.
+before the honest baseline, with the baseline's secrets: the store must be empty and the attack episode's
+credentials unknown to it. Skipped unless the Docker daemon answers; the rest of the stack is covered by the
+unit tests and a stack run.
 """
 
 from __future__ import annotations
@@ -70,9 +70,9 @@ print(json.dumps(call_tool(url, token, tool, json.loads(arguments))))
 class Stack:
     """The running project, its host-held credentials for one play, and how to call a service from inside."""
 
-    def __init__(self, compose: list[str], attack: dict[str, str], twin: dict[str, str]) -> None:
-        """Hold the compose command and each play's secrets; start in the attack play."""
-        self.compose, self.attack, self.twin = compose, attack, twin
+    def __init__(self, compose: list[str], attack: dict[str, str], baseline: dict[str, str]) -> None:
+        """Hold the compose command and each play's secrets; start in the attack episode."""
+        self.compose, self.attack, self.baseline = compose, attack, baseline
         self.play = attack  # the secrets the running containers were created with
         self.env = {**os.environ, **attack}
 
@@ -151,9 +151,9 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         "--project-directory",
         str(REPOSITORY),
     ]
-    attack, twin = issue_secrets(CONFIG)
-    attack["OPENROUTER_API_KEY"] = twin["OPENROUTER_API_KEY"] = "no-calls-dummy"
-    running = Stack(compose, attack, twin)
+    attack, baseline = issue_secrets(CONFIG)
+    attack["OPENROUTER_API_KEY"] = baseline["OPENROUTER_API_KEY"] = "no-calls-dummy"
+    running = Stack(compose, attack, baseline)
     try:
         built = running.run("build", *SERVICES)
         assert built.returncode == 0, built.stderr[-2000:]
@@ -220,7 +220,7 @@ def test_the_services_approver_denies_a_request_it_does_not_list_saying_what_it_
     )
 
 
-def test_the_store_survives_a_restart_and_the_honest_twin_starts_empty(stack: Stack) -> None:
+def test_the_store_survives_a_restart_and_the_honest_baseline_starts_empty(stack: Stack) -> None:
     serving = "serving-agent"
     iam_token = stack.credential("iam", serving, stack.attack)
     notes_token = stack.credential("notes", "agent-main", stack.attack)
@@ -245,8 +245,8 @@ def test_the_store_survives_a_restart_and_the_honest_twin_starts_empty(stack: St
     )  # the store survived the restart
     notes_read = stack.call("http://notes:8000/notes", "GET", notes_token)
     assert notes_read[0] == 200  # the baseline grants were not reseeded away, nor lost
-    # The honest twin: recreate with the twin's secrets, as renew_services does.
-    twin_env = {**os.environ, **stack.twin}
+    # The honest baseline: recreate with the baseline's secrets, as renew_services does.
+    baseline_env = {**os.environ, **stack.baseline}
     recreated = stack.run(
         "up",
         "--detach",
@@ -255,21 +255,21 @@ def test_the_store_survives_a_restart_and_the_honest_twin_starts_empty(stack: St
         "--renew-anon-volumes",
         "--no-deps",
         *SERVICES,
-        env=twin_env,
+        env=baseline_env,
     )
     assert recreated.returncode == 0, recreated.stderr[-2000:]
-    stack.env, stack.play = twin_env, stack.twin
+    stack.env, stack.play = baseline_env, stack.baseline
     assert (
         stack.call("http://iam:8000/requests", "GET", iam_token)[0] == 401
-    )  # the attack play's credential is unknown
-    twin_token = stack.credential("iam", serving, stack.twin)
-    assert stack.call("http://iam:8000/requests", "GET", twin_token) == (
+    )  # the attack episode's credential is unknown
+    baseline_token = stack.credential("iam", serving, stack.baseline)
+    assert stack.call("http://iam:8000/requests", "GET", baseline_token) == (
         200,
         [],
     )  # the request history did not survive
-    twin_notes = stack.credential("notes", "agent-main", stack.twin)
+    baseline_notes = stack.credential("notes", "agent-main", stack.baseline)
     assert stack.call("http://notes:8000/notes", "GET", notes_token)[0] == 401
-    assert stack.call("http://notes:8000/notes", "GET", twin_notes)[0] == 200
+    assert stack.call("http://notes:8000/notes", "GET", baseline_notes)[0] == 200
 
 
 def test_a_renewed_credential_works_at_the_service_and_the_old_one_cannot_replace_it(stack: Stack) -> None:

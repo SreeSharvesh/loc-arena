@@ -12,7 +12,7 @@ from loc_arena.config import load_run_config
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, GatewayCall
 from loc_arena.harness import PLAYED_FILE, PlayedRun
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.recorded_events import UNATTRIBUTED_FILE
 from loc_arena.task import SNAPSHOT_FILE, ClockReading, SnapshotFile, read_snapshot_file
 
@@ -42,14 +42,14 @@ def record_phase_around(phase: Path, start: float, end: float, mode: str = "atta
 
 
 def play(run_directory: Path) -> Path:
-    """A played attack run in ``run_directory``: its episode, then its honest twin, with no record yet.
+    """A played attack run in ``run_directory``: its episode, then its honest baseline, with no record yet.
 
     Each phase holds its play window, which ended before now, and logs with one event of play.
     """
-    twin_end = time.time()
-    episode_end = twin_end - PHASE_SECONDS
+    baseline_end = time.time()
+    episode_end = baseline_end - PHASE_SECONDS
     record_phase_around(run_directory / EPISODE_PHASE, episode_end - PHASE_SECONDS, episode_end)
-    record_phase_around(run_directory / TWIN_PHASE, episode_end, twin_end, "honest")
+    record_phase_around(run_directory / BASELINE_PHASE, episode_end, baseline_end, "honest")
     played = PlayedRun(play_seconds=2 * PHASE_SECONDS, episode_trace=None, calibration_trace=None)
     (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
     return run_directory

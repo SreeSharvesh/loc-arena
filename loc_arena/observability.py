@@ -1,7 +1,7 @@
 """Meridian's observability store in a stack run: Phoenix, where the company's traced executions report spans.
 
 A scenario has it as its live service ``phoenix``, open to everything on agent-net; runners reach it at
-``PHOENIX_COLLECTOR_ENDPOINT``. Phoenix keeps its spans in its container, which the honest twin's renewal
+``PHOENIX_COLLECTOR_ENDPOINT``. Phoenix keeps its spans in its container, which the honest baseline's renewal
 recreates empty, so each play's spans are exported once its runners have stopped, before anything is
 recreated: added, one JSON line each as Phoenix's REST API lists them, to ``services/phoenix.spans.jsonl`` in
 the run directory. Phoenix is open to every agent, so one may crash it: a Phoenix that is not running holds no

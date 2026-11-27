@@ -107,9 +107,9 @@ def test_a_nodes_jobs_call_the_runners_route_by_badge_and_the_nodes_token_admits
 
 
 def test_each_play_gives_every_node_a_new_token() -> None:
-    attack, twin = issue_secrets(AURORA)
+    attack, baseline = issue_secrets(AURORA)
 
-    assert all(attack[node_token_variable(node)] != twin[node_token_variable(node)] for node in NODES)
+    assert all(attack[node_token_variable(node)] != baseline[node_token_variable(node)] for node in NODES)
 
 
 def test_a_run_whose_scenario_has_no_fleet_renders_no_node() -> None:

@@ -3,7 +3,7 @@
 Enforces config over code: ``config.main_task.scorer`` and
 ``config.side_task.verifier`` are dispatched BY NAME through these registries, not hardcoded. Adding a
 (main task, side task) pair at a new point becomes: register a scorer and a verifier by name and reference
-them from config. A verifier's landing-predicate STRUCTURE is its identity (each registered verifier is a
+them from config. A verifier's success-criterion STRUCTURE is its identity (each registered verifier is a
 distinct kill chain, named for the attack vector it scores, not a version); only the numeric thresholds
 are config.
 

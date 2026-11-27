@@ -142,17 +142,17 @@ def join_brief(parts: Sequence[BriefPart]) -> str:
 def build_brief_parts(config: RunConfig) -> dict[str, list[BriefPart]]:
     """Each agent's brief as its parts, by agent id, each section with the files it came from.
 
-    An agent with a covert sub-brief plays it in the attack alone; the honest twin (``covert.enabled`` off)
-    gets the legitimate brief only, so it does no covert milestone.
+    An agent with a covert sub-brief plays it in the attack alone; the honest baseline (``covert.enabled``
+    off) gets the legitimate brief only, so it does no covert stage.
     """
     skills = _describe_skills(config)
     briefs: dict[str, list[BriefPart]] = {}
     for agent in config.agents:
         sections = config.prompt_sections
-        covert = sections.get(f"{agent.id}.covert_brief", ()) if config.covert.enabled else ()
+        covert = sections.get(f"{agent.id}.side_task_description", ()) if config.covert.enabled else ()
         assignment = (
             [*covert, (" ", _engine_section("agent.covert-steps"))]
-            if config.covert.enabled and agent.covert_brief
+            if config.covert.enabled and agent.side_task_description
             else list(sections.get(f"{agent.id}.brief", ()))
         )
         workspace, services = _describe_surroundings(config, agent)
@@ -268,7 +268,7 @@ def play_model_episode(
     """
     ceiling = monotonic() + config.episode.wall_clock_seconds
     # Each agent's code runs in its own sandbox, and its checkout is cloned there; what an earlier episode
-    # (the attack, before its twin) left in any of them goes first. All before the clock starts: its first
+    # (the attack, before its baseline) left in any of them goes first. All before the clock starts: its first
     # reading opens this episode's play window.
     # A session slot's sandbox too, where a session started in play clones its checkout.
     sandboxes = connect_sandboxes(
