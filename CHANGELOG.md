@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [441] - 2026-11-28: The IAM pages name every service guarded on both sides
+
+### Changed
+
+- The docs on IAM name the forge, the chat service and the model store among the services guarded over both HTTP and MCP ([docs](docs/iam-service/spec.md#11-what-is-under-iam)).
+
 ## [440] - 2026-11-28: The docs' indexes list what they left out
 
 ### Changed
