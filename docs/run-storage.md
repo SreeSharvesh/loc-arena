@@ -28,7 +28,7 @@ name. A bundle without `config_name`, or without that record, is refused.
 
 ## Store what else a run yields
 
-Anything else a run yields, such as a reading or a monitor re-run, is committed by hand into `extras/` in the
+Anything else a run yields, such as a reading or a [monitor re-run](trajectory-monitors.md#run-monitors-again-over-a-stored-run), is committed by hand into `extras/` in the
 run's folder once the publish has filed it. A folder made before then makes the publish refuse the run, or skip
 it as already published when the folder holds its `scores.json`. What no filed run holds, such as an
 ungraded play or an analysis across runs, goes under `spikes/<date>-<name>/`. First run the publish's scan

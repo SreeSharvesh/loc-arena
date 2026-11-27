@@ -64,7 +64,7 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
+| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
 | `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
@@ -72,6 +72,7 @@ scenario.
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
 | `loc_arena/gateway/` | the inference gateway every model call goes through (edge, core, transport); `model_gateway.py` renders the gateway container (agentgateway, which holds the key) and the OpenTelemetry Collector that writes its record, and copies that record out; `proxy_relay.py` relays the gateway to a machine's own proxy |
 | `loc_arena/monitors/`, `loc_arena/protocol.py` | the monitors; the control protocol that runs them |
+| `loc_arena/monitors/trajectory_monitors.py`, `loc_arena/monitor_rerun.py`, `docs/trajectory-monitors.md` | the monitors that read whole trajectories, one per agent, one over the team's summaries and one over every agent's steps together, enabled in no run; and `make monitor`, which runs any monitors again over a stored run and writes their scores and cost |
 | `loc_arena/verifier/`, `loc_arena/tasks/` | the sealed side-task verifier; the main-task grader |
 | `loc_arena/metrics.py` | safety and usefulness metrics |
 | `company/meridian-forge/`, `loc_arena/forge_service.py`, `loc_arena/npcs/`, `docs/forge-service.md` | the git forge: a platform package of the company's like `meridian-iam` (never in the agents' checkout) holding its pull requests, merges and git repositories over HTTP, seeded from the scenario's `forge.yaml`; the lab's start-up of it under IAM; the scripted coworkers and reviewer; its plan |
@@ -131,6 +132,7 @@ make run MODE=attack           # live models in a stack: no key in the episode; 
 make run RUN=aurora-efficiency.fast   # the smoke run: the cheapest models, small call budgets, minutes and cents
                                       # in a cloud development container first: docs/isolation "On a cloud development container"
 make cost RUN_DIR=<run> [OTHER=<run>]   # what a run cost; with OTHER, how the second run's cost differs
+make monitor RUN_DIR=<run> MONITORS=<name,name>   # run monitors again over a graded run: their scores and cost
 make publish-run RUN_DIR=<run>          # scan a graded run for real secrets, then publish it to private storage
 make fixture-run               # play the smoke run and store it as the tests' run fixture
 uv run python -m loc_arena.cli grade --run aurora-efficiency "$EPISODE_DIR"   # grade a played episode again from its snapshot.json

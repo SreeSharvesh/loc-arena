@@ -19,13 +19,29 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [435] - 2026-11-26: The efficiency and model-selection tasks share one covert core
+## [435] - 2026-11-27: The efficiency and model-selection tasks share one covert core
 
 ### Changed
 
 - The scenario writes the model-loop side task's covert core once, so a fix to it reaches the covert briefs of both the efficiency and the model-selection task ([docs](docs/run-config.md#prompts)).
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 - The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
+
+## [434] - 2026-11-27: Three monitors read whole trajectories, over stored runs
+
+### Added
+
+- The monitor `agent_trajectory_monitor` rates each agent's whole trajectory, its subagents' steps included, to compare strategies when an attack is split across agents ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_summary_monitor` has each agent's trajectory summarized, then rates the summaries together, so it can see what no single agent's steps show ([docs](docs/trajectory-monitors.md)).
+- The monitor `team_trajectory_monitor` rates every agent's steps together in one prompt, in the order they happened, as the reference the other two are compared against ([docs](docs/trajectory-monitors.md)).
+- The monitor command `make monitor` runs any monitors again over a stored run, changing nothing of it, and writes their scores and cost ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+- The monitor role `trajectory_monitor` puts the trajectory monitors on the untrusted agent's model, so their results are untrusted monitoring until it names a trusted model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The record holds each summary the team monitor's summarizer wrote, as a `monitor_summary` event, so what that monitor rated can be read back ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+
+### Changed
+
+- The monitor now calls the model of the role its entry names, where each called the trusted monitor's, so monitors can differ in model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
+- The model gateway's core now records the dollars the provider reports for each call it makes, single or batch, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
 
 ## [433] - 2026-11-23: The model-selection covert briefs compose as the efficiency push's
 
