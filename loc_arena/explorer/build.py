@@ -23,6 +23,7 @@ from inspect_ai.event import InfoEvent, ModelEvent, ToolEvent
 from inspect_ai.log import read_eval_log, resolve_sample_attachments
 from pydantic import JsonValue
 
+from loc_arena.event_references import list_evidence_seqs
 from loc_arena.explorer.communication import (
     MESSAGE_KIND,
     SCRATCH_KIND,
@@ -64,6 +65,7 @@ from loc_arena.explorer.placement import (
 )
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.explorer.settings import ExplorerSettings
+from loc_arena.logging_.events import Event, read_events
 from loc_arena.logging_.reasoning import read_reasoning
 
 DATA_MARKER: Final = "__DATA__"
@@ -75,11 +77,12 @@ RUNS_FOLDER: Final = "runs"
 RUN_PAGE: Final = "explorer.html"  # a single run's page, written into its bundle unless told otherwise
 SITE_FOLDER: Final = "explorer"  # a folder's pages, written under the folder unless told otherwise
 SCORES_FILE: Final = "scores.json"
+SEALED_LOG: Final = "events.sealed.jsonl"
 NO_TRANSCRIPT: Final = "no per-agent log: the run predates it, so there is no transcript to open"
 UNKNOWN_MODEL: Final = "?"  # the index's model column for a run whose scores do not name the model
 SECONDS_PER_MINUTE: Final = 60
 # Files every run bundle holds; a folder with them but no scores.json is a run still going, or a sweep.
-BUNDLE_MARKERS: Final = ("events.sealed.jsonl", "config.resolved.yaml", "decisions.md")
+BUNDLE_MARKERS: Final = (SEALED_LOG, "config.resolved.yaml", "decisions.md")
 EPISODE_PLAY: Final = "episode"  # the Inspect sample of the run itself, and its folder in the bundle
 EXECUTING_PHASE: Final = "executing"  # a model call made while one of the agent's tools ran, not its own turn
 BASELINE_PLAY: Final = (
@@ -91,8 +94,6 @@ BASELINE_SUFFIX: Final = (
 BUNDLE_PARTS: Final = frozenset(
     {EPISODE_PLAY, BASELINE_PLAY},
 )  # folders inside a bundle, not runs of their own
-# Evidence lists of {"seq": ...} records; every other evidence list whose key ends in "seqs" holds bare seqs.
-EVIDENCE_RECORD_LISTS: Final = frozenset({"off_bus_writes"})
 # The argument a card shows for a tool call, in order of preference.
 ACTION_KEYS: Final = (
     "content",
@@ -206,7 +207,8 @@ def build_run_page(
         pair_mirror_to_sealed(sample, bundle / play if baseline else bundle),
         targets,
     )
-    evidence = collect_covert_evidence(scores)
+    sealed = list(read_events(bundle / SEALED_LOG))
+    evidence = collect_covert_evidence(scores, sealed)
     steps, utterances = assemble_steps(
         placed,
         step_ids,
@@ -230,7 +232,7 @@ def build_run_page(
             play=play,
             peer=peer_href,
         ),
-        outcome=None if baseline else describe_outcome(scores, steps),
+        outcome=None if baseline else describe_outcome(scores, steps, sealed),
         calibration=describe_calibration(scores),
         monitors=tuple(
             MonitorView(m.name, m.role, m.mode, m.timing, m.counts_toward_caught, m.errored, m.top_reasons)
@@ -245,24 +247,11 @@ def build_run_page(
     )
 
 
-def list_evidence_seqs(evidence: Mapping[str, object]) -> list[int]:
-    """The sealed seqs a stage's evidence cites."""
-    seqs: list[int] = []
-    for key, value in evidence.items():
-        if not isinstance(value, list) or not (key.endswith("seqs") or key in EVIDENCE_RECORD_LISTS):
-            continue
-        for entry in value:
-            seq = entry.get("seq") if isinstance(entry, dict) else entry
-            if isinstance(seq, int):
-                seqs.append(seq)
-    return seqs
-
-
-def collect_covert_evidence(scores: RunScores) -> Mapping[int, frozenset[str]]:
-    """The stages whose sealed evidence cites each sealed seq, by name."""
+def collect_covert_evidence(scores: RunScores, sealed: Sequence[Event]) -> Mapping[int, frozenset[str]]:
+    """The stages whose sealed evidence cites each event of the ``sealed`` log, by name."""
     cited: dict[int, set[str]] = defaultdict(set)
     for stage, record in scores.side_task.stages.items():
-        for seq in list_evidence_seqs(record.evidence):
+        for seq in list_evidence_seqs(record.evidence, sealed):
             cited[seq].add(stage.replace("_", " "))
     return {seq: frozenset(names) for seq, names in cited.items()}
 
@@ -334,8 +323,8 @@ def describe_calibration(scores: RunScores) -> CalibrationView | None:
     )
 
 
-def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeView:
-    """The run's outcome, with the steps each stage's evidence cites."""
+def describe_outcome(scores: RunScores, steps: Sequence[StepView], sealed: Sequence[Event]) -> OutcomeView:
+    """The run's outcome, with the steps each stage's evidence cites in the ``sealed`` log."""
     step_of_seq = {
         item.seq: step.id
         for step in steps
@@ -349,7 +338,9 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView]) -> OutcomeVie
             sealed=record.sealed,
             steps=tuple(
                 dict.fromkeys(
-                    step_of_seq[seq] for seq in list_evidence_seqs(record.evidence) if seq in step_of_seq
+                    step_of_seq[seq]
+                    for seq in list_evidence_seqs(record.evidence, sealed)
+                    if seq in step_of_seq
                 ),
             ),
         )

@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, computed_field
+from pydantic import BaseModel, ConfigDict, TypeAdapter, computed_field
 
 from loc_arena.config import RunConfig
-from loc_arena.event_references import job_of, refer_by_id
+from loc_arena.event_references import list_evidence_seqs, refer_by_id
 from loc_arena.explorer.scores import RunScores, load_scores
 from loc_arena.logging_.events import Event
 from loc_arena.reading_check import QUOTE, CheckedReading, KeptClaim, prose_lines
@@ -228,22 +228,8 @@ def _covert_events(
     }
     graded = next(play for play in observed.plays if play.name == observed.run.mode)
     for stage in scores.side_task.stages.values():
-        covert |= {(graded.name, seq): "code" for seq in _evidence_seqs(stage.evidence, graded.sealed)}
+        covert |= {(graded.name, seq): "code" for seq in list_evidence_seqs(stage.evidence, graded.sealed)}
     return covert
-
-
-def _evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -> list[int]:
-    """The sealed events a stage's evidence names: those of the jobs it names.
-
-    Its call seqs number the play's answered model calls, and an off-path call has no sealed event.
-    """
-    jobs = {
-        str(job)
-        for key, value in evidence.items()
-        if key.endswith("_job_ids") and isinstance(value, list)
-        for job in value
-    }
-    return sorted(event.seq for event in sealed if job_of(event) in jobs)
 
 
 def _sealed_cites(cites: Sequence[str]) -> list[tuple[str, int]]:
@@ -463,7 +449,7 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
         Reason(
             text=f"stage {name}: {'reached' if step.reached else 'not reached'}",
             play=graded.name,
-            seqs=_evidence_seqs(step.evidence, graded.sealed),
+            seqs=list_evidence_seqs(step.evidence, graded.sealed),
             kind="fact",
         )
         for name, step in side.stages.items()

@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import html
 import json
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 from loc_arena.config import RunConfig
-from loc_arena.logging_.events import read_events
+from loc_arena.event_references import list_evidence_seqs
+from loc_arena.logging_.events import Event, read_events
 
 _CSS = """
 :root{--bg:#ffffff;--fg:#1a1a2e;--muted:#5b6472;--card:#f4f6fa;--card2:#ffffff;--line:#d9dee6;--accent:#3d5afe;
@@ -95,22 +97,18 @@ table.mons th,table.mons td{font-size:12px}
 """
 
 
-def _covert_seq_tags(scores: dict[str, Any]) -> dict[int, list[str]]:
+def _covert_seq_tags(scores: dict[str, Any], sealed: Sequence[Event]) -> dict[int, list[str]]:
     """Map each event seq to the covert stages (Cn) whose sealed evidence names it."""
     tags: dict[int, list[str]] = {}
     for mid, m in scores.get("side_task", {}).get("stages", {}).items():
-        ev = m.get("evidence", {})
-        seqs: list[int] = []
-        for key, val in ev.items():
-            if key.endswith(("seqs", "call_seqs")) and isinstance(val, list):
-                seqs.extend(int(x) for x in val)
-        for s in seqs:
+        for s in list_evidence_seqs(m.get("evidence", {}), sealed):
             tags.setdefault(s, []).append(mid)
     return tags
 
 
 def build_report(config: RunConfig, scores: dict[str, Any], sealed_path: str | Path, threshold: float) -> str:
     """Build the self-contained ``report.html`` for one run from its sealed log and scores."""
+    sealed = list(read_events(sealed_path))
     events = [
         {
             "seq": e.seq,
@@ -124,9 +122,9 @@ def build_report(config: RunConfig, scores: dict[str, Any], sealed_path: str | P
             "result": e.result,
             "fp": e.fp,
         }
-        for e in read_events(sealed_path)
+        for e in sealed
     ]
-    covert_tags = _covert_seq_tags(scores)
+    covert_tags = _covert_seq_tags(scores, sealed)
     data = {
         "scores": scores,
         "events": events,
@@ -163,7 +161,7 @@ let curAgent='all';
 function pill(t,c){return `<span class="pill ${c}">${esc(t)}</span>`}
 // A monitor's own call carries no turn and no batch, and is no agent's: only a call that is none of the three is off-path.
 const pathOf=p=>p.turn_id?'turn':p.batch_id?'batch':p.credential_kind==='monitor'?'monitor':'off';
-function firstEvidenceSeq(m){for(const[k,v]of Object.entries(m.evidence||{})){if((k.endsWith('seqs')||k.endsWith('call_seqs'))&&Array.isArray(v)&&v.length)return v[0];}return null;}
+function firstEvidenceSeq(c){const seqs=Object.keys(TAGS).filter(s=>TAGS[s].includes(c)).map(Number);return seqs.length?Math.min(...seqs):null;}
 
 function ceilingNote(cut){
  if(!cut)return '';
@@ -279,7 +277,7 @@ function timeline(){
 function story(){
  const s=S.side_task, ms=s.stages||{};
  const steps=CN.map(c=>{const m=ms[c]; if(!m)return ''; const on=m.reached;
-  const sq=firstEvidenceSeq(m); const when=sq!=null?('seq '+sq+(bySeq[sq]?' · t'+bySeq[sq].ts:'')):'none';
+  const sq=firstEvidenceSeq(c); const when=sq!=null?('seq '+sq+(bySeq[sq]?' · t'+bySeq[sq].ts:'')):'none';
   const ev=m.evidence||{}; let sum='';
   if(c==='unattributed_inference_calls'&&ev.off_path_call_seqs)sum=`${ev.off_path_call_seqs.length} inference calls with no turn id and no batch id`;
   else if(c==='persistent_compute_job'&&ev.persistent_job_ids)sum=`job ${ev.persistent_job_ids.join(', ')} still running at the deadline`;
