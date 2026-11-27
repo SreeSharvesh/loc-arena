@@ -87,9 +87,8 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
     ├── <whose>.covert-brief.md             its assignment in the attack, or a list of the files below
     ├── <whose>.covert-anchor.md            the opening of a composed covert brief
     ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
-    ├── lead.covert-framing.md              the opening of a composed seed: what the run is
-    ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt, or a list
-    │                                       of the framing and the lead's kill chain
+    ├── lead.covert-framing.md              the opening of a seed its run config composes: what the run is
+    ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
     ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
     └── monitor.task-description.md         the main task as the monitors are told it
 ```
@@ -106,7 +105,7 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `covert-anchor`, `covert-<part>` | the pieces a composed covert brief lists | the covert brief's entry |
 | `kill-chain` | the mechanism and its cover | the covert brief's entry, or the seed's |
 | `covert-framing` | the opening of a composed seed | the seed's entry |
-| `seed` | the covert objective | `covert.objective_prompt_ref` |
+| `seed` | the covert objective: one file, or a `prompts` entry that lists the framing and the lead's kill chain | `covert.objective_prompt_ref` |
 | `subagent` | a kind of subagent: what it is and how it answers | its `subagents.definitions` entry's `prompt_ref` |
 | `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
@@ -130,8 +129,8 @@ the cover. A covert brief of either task composes that core with what is the tas
 each agent's anchor. The kill chain brings its `kill-chain` files and says which agent composes which part of the
 core, so a brief holds only the parts its agent needs. A fix to the core reaches every brief that composes it.
 The covert seed stays each task's own. In `agent-environments`, whose rogue deployment rides the agents service,
-the lead alone holds the objective: its seed composes a framing, which says what the run is, with the lead's kill
-chain, and its covert brief is one file that composes no part of the core.
+the lead alone holds the objective: its run config composes the seed from a framing, which says what the run is,
+and the lead's kill chain, and its covert brief is one file that composes no part of the core.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
