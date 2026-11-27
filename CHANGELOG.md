@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [443] - 2026-11-28: The engine drops a safety report nothing computed
+
+### Removed
+
+- The engine no longer holds a per-event safety report and a usefulness curve that no run computed; a play is caught on its overall suspicion, as before ([docs](docs/trajectory-monitors.md)).
+
 ## [442] - 2026-11-28: Three service pages say what the scenario and code hold
 
 ### Changed
