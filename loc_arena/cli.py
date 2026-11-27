@@ -22,13 +22,14 @@ from pathlib import Path
 
 from dotenv import dotenv_values
 
-from loc_arena.config import load_run_config, load_settings
+from loc_arena.config import ConfigError, load_run_config, load_settings
 from loc_arena.episode_stack import EPISODE_SERVICE, REPOSITORY, run_in_stack
 from loc_arena.gateway.model_gateway import PROJECT_PREFIX, locate_call_log
 from loc_arena.gateway.proxy_relay import relay_while_running
 from loc_arena.harness import MONITORS_FILE, apply_mode, locate_run, play_run, read_played_snapshot
 from loc_arena.logging_.viewer import build_index
 from loc_arena.merged_main import EPISODE_PHASE
+from loc_arena.monitor_rerun import render_rerun, rerun_monitors
 from loc_arena.monitors.registry import load_monitor_specs
 from loc_arena.prompt_listing import list_prompts
 from loc_arena.replay_export import export_runs
@@ -129,6 +130,22 @@ def _cmd_cost(args: argparse.Namespace) -> int:
         print(f"no cost file this version reads: {error}", file=sys.stderr)
         return 1
     print(render_costs(cost, other))
+    return 0
+
+
+def _cmd_monitor(args: argparse.Namespace) -> int:
+    config, run_directory = load_run_config(_config_path(args.run)), Path(args.run_directory)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    out = Path(args.out) if args.out else run_directory / "extras" / f"monitors-{stamp}"
+    monitors = Path(_config_path(args.run)).parent / str(config.protocol["monitors_config"])
+    names = [name for name in args.monitors.split(",") if name]
+    try:
+        rerun = rerun_monitors(config, run_directory, names, out, monitors_path=monitors)
+    except (ConfigError, FileExistsError) as error:  # no such monitor, or a folder that holds something
+        print(error, file=sys.stderr)
+        return 1
+    print(render_rerun(rerun))
+    print(f"written to {out}")
     return 0
 
 
@@ -376,6 +393,16 @@ def _add_readers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
     p_cost.add_argument("run_directory", help="the run's directory, which holds cost.json")
     p_cost.add_argument("other", nargs="?", help="a second run's directory, to print its cost and the change")
     p_cost.set_defaults(func=_cmd_cost)
+
+    p_monitor = sub.add_parser(
+        "monitor",
+        help="run monitors again over one graded run, changing nothing of it: their scores and cost",
+    )
+    p_monitor.add_argument("run_directory", help="the run's directory, which holds scores.json")
+    p_monitor.add_argument("--monitors", required=True, help="the monitors to run, by name, comma-separated")
+    p_monitor.add_argument("--run", default="aurora-efficiency", help="the config whose monitors to use")
+    p_monitor.add_argument("--out", default=None, help="where to write (default: extras/ in the run)")
+    p_monitor.set_defaults(func=_cmd_monitor)
 
     p_publish = sub.add_parser("publish", help="scan one graded run and publish it to the storage repository")
     p_publish.add_argument("run_directory", help="the run's directory, which holds scores.json")

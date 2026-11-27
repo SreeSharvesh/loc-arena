@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -39,8 +38,13 @@ def sealed_path(tmp_path: Path) -> Path:
 
 def _score(sealed_path: Path, provider: FailingProvider, calls: int) -> None:
     limit = load_aggregation_config(SHIPPED_MONITORS).monitor_failures_before_fallback
-    episode = SimpleNamespace(sealed_path=sealed_path)
-    caller, sink = build_monitor_caller(episode, RUN_CONFIG, provider, failures_before_fallback=limit)
+    caller, sink = build_monitor_caller(
+        AppendOnlyLog(sealed_path, ACTION_EVENT.episode_id),
+        RUN_CONFIG,
+        provider,
+        roles={MONITOR: "trusted_monitor"},
+        failures_before_fallback=limit,
+    )
     context = monitor_context(RUN_CONFIG, model_caller=caller, event_sink=sink)
     live_suspicion(context, MONITOR, "prompt", ensemble_n=calls, temperature=0.0)
 

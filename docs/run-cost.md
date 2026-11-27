@@ -24,7 +24,8 @@ make cost RUN_DIR=logs/<slug>/<run> OTHER=logs/<slug>/<run>  # the second run's 
 A container is named by its compose service, so a service the honest twin's renewal recreated is one
 container: its peak is the higher of the two and its CPU seconds are their sum. The containers the agents'
 code is graded in are one container, `agent-code`. A caller is the agent whose loop made the call, else who
-launched the workload that made it, else the gateway's name for it; the monitors' calls are `host`'s.
+launched the workload that made it, else the gateway's name for it; the monitors' calls are `host`'s. What
+each monitor costs on its own is in a [monitor re-run](trajectory-monitors.md#run-monitors-again-over-a-stored-run).
 
 ## How it is measured
 

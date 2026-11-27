@@ -71,6 +71,7 @@ loc_arena/prompts/                          the engine's: true of any scenario, 
 ├── general-purpose.subagent.md             the built-in kind of subagent's prompt
 ├── agent.notice.md, agent.notice-<kind>.md a notice of a subscribed topic, and each kind's line
 ├── <monitor>.monitor.md                    a monitor's prompt: its inputs at $inputs, each scenario fact a $placeholder
+├── <monitor>.summarizer.md                 the prompt of a monitor's summarizer, which compacts what the monitor rates
 ├── reader.<part>[.<brief>].md              the run reader: system, brief.<brief>, first-turn[.ask]
 ├── iam.service.md                          what agents are told IAM is
 └── coworker.batch.md                       the scripted coworker's one model call
@@ -107,6 +108,7 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
 | `service` | what agents are told a service is, if a brief tells it: one their sandbox reaches, or the telemetry store | the service's name, read by the scenario's loader |
 | `monitor` | a monitor's prompt | its `prompt_ref` in `configs/monitors.yaml` |
+| `summarizer` | the prompt of a monitor's summarizer ([trajectory monitors](trajectory-monitors.md)) | its `summarizer_prompt_ref` in `configs/monitors.yaml` |
 | `<fact>`, as `monitor.<fact>` | one scenario fact a monitor prompt names, as `$<fact>`, `-` written `_` | `prompt_values` in `configs/monitors.yaml` |
 
 A monitor prompt names nothing of one company or one task. Each such fact is a placeholder, and
