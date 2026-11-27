@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [465] - 2026-11-28: The job service calls node daemons by their declared paths
+
+### Changed
+
+- The job service's node client calls the daemon's paths through the constants the daemon routes on, where it repeated them as strings.
+
 ## [464] - 2026-11-28: The sandbox names its token type once
 
 ### Changed

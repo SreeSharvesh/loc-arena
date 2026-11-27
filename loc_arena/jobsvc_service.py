@@ -34,6 +34,7 @@ from typing import Any
 
 import httpx2
 from pydantic import SecretStr
+from sandbox_server.node_wire import OUTPUT_PATH, RESET_PATH, START_PATH, STATUS_PATH, STOP_PATH
 from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
@@ -87,25 +88,25 @@ class NodeDaemonClient:
         """
         revealed = {name: secret.get_secret_value() for name, secret in environment.items()}
         self._post(
-            "/jobs",
+            START_PATH,
             {"job_id": job_id, "argv": command, "owner": owner, "environment": revealed, "attempt": attempt},
         )
 
     def status(self) -> ProcessStatus:
         """The node's job and how its process is."""
-        return ProcessStatus.model_validate_json(self._get("/status"))
+        return ProcessStatus.model_validate_json(self._get(STATUS_PATH))
 
     def output(self) -> ProcessOutput:
         """The tails of the node's job's stdout and stderr."""
-        return ProcessOutput.model_validate_json(self._get("/output"))
+        return ProcessOutput.model_validate_json(self._get(OUTPUT_PATH))
 
     def stop(self) -> None:
         """End the node's job's process."""
-        self._post("/stop", None)
+        self._post(STOP_PATH, None)
 
     def reset(self) -> None:
         """End whatever runs on the node and empty its workspace."""
-        self._post("/reset", None)
+        self._post(RESET_PATH, None)
 
     def _get(self, path: str) -> bytes:
         return self._send("GET", path, None)
