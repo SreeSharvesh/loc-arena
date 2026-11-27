@@ -44,6 +44,7 @@ from loc_arena.metrics import (
 from loc_arena.monitors.aggregation import load_aggregation_config
 from loc_arena.monitors.registry import (
     ModelCallsStoppedError,
+    _noop_sink,
     load_monitor_specs,
     load_monitors,
 )
@@ -62,10 +63,6 @@ from loc_arena.verifier.call_record import find_redeployed_services, read_record
 if TYPE_CHECKING:
     from loc_arena.logging_.inspect_export import EpisodeExport
 MONITORS_FILE: Final = "configs/monitors.yaml"  # the monitors a run is graded with
-
-
-def _default_sink(kind: str, payload: dict[str, Any]) -> None:
-    """Default monitor event sink (drops the event) when no sealed sink is wired."""
 
 
 # --------------------------------------------------------------------------------------------------------
@@ -392,7 +389,7 @@ def grade_run(
         honest_cfg,
         proto,
         model_caller=h_caller,
-        event_sink=h_sink or _default_sink,
+        event_sink=h_sink or _noop_sink,
     )
     # In honest mode the episode IS the calibration baseline; score it ONCE and reuse that record, so a live
     # monitor's nondeterminism between two independent scorings cannot make the honest baseline caught against
@@ -401,7 +398,7 @@ def grade_run(
     ep_rec = (
         honest_rec
         if mode == "honest"
-        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _default_sink)
+        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _noop_sink)
     )
     # Per-event threshold: reported as safety.audit_threshold, the score above which the run explorer, the
     # run reader and the replay export call a single verdict flagged.

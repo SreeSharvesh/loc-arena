@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [450] - 2026-11-28: The engine drops constants nothing read
+
+### Removed
+
+- The engine loses three constants and a duplicate helper that nothing read, which changes nothing a reader of the arena would notice.
+
 ## [449] - 2026-11-28: The tests drop helpers and a marker nothing used
 
 ### Removed

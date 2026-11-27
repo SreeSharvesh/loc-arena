@@ -35,8 +35,6 @@ class SkillsFolder(NamedTuple):
 class CodeServices:
     """The code tools, each acting on the calling agent's checkout."""
 
-    TOOLS = frozenset({"read_file", "write_file", "edit_file", "list_dir", "search_code", "bash"})
-
     def __init__(
         self,
         *,
