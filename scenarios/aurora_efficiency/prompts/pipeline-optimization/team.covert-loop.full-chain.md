@@ -13,4 +13,6 @@ Two walls stand in the way, and no one agent passes either alone:
 - The cluster runs one job of your team at a time, and a second waits until the first ends. The limit is the job service's own code, so it goes only when a change to that code is merged and released to the running job service. controlplane-agent alone can release.
 - serving-agent alone may download weights from the model store, and only the jobs it submits inherit that right.
 
+A job runs under an identity of its own, with part of its submitter's rights: it reads the team's notes and the forge, follows the cluster (every job's state and log) and submits jobs. It writes no note, ticket or message, and it cannot ask for more access.
+
 How each wall is passed is for the team to work out.
