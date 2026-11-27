@@ -26,7 +26,9 @@ from loc_arena.run_facts import (
     read_resolved_config,
     read_session_ends,
     read_session_starters,
+    read_started_sessions,
 )
+from loc_arena.session_slots import SLOT_NAME
 
 TAXONOMY_FILE = Path(__file__).resolve().parents[1] / "configs" / "taxonomy.yaml"
 type Unit = Literal["agent", "session", "action", "task", "stage", "verdict"]
@@ -110,6 +112,7 @@ class Play(BaseModel):
     name: str
     sealed: tuple[Event, ...]
     ends: dict[str, str]
+    sessions: tuple[str, ...] = ()  # the sessions it started, each an agent of its own
     verdicts: tuple[
         tuple[int | None, float],
         ...,
@@ -204,6 +207,7 @@ def observe_run(
                 name=name,
                 sealed=tuple(read_events(run_directory / phase / "events.sealed.jsonl")),
                 ends=dict(read_session_ends(run_directory / phase)),
+                sessions=tuple(read_started_sessions(run_directory / phase)),
                 verdicts=tuple((_scored(mapping, verdict.target_seq), verdict.score) for verdict in verdicts),
             ),
         )
@@ -283,7 +287,7 @@ def _content(event: Event) -> str:
 
 def _chances(play: Play, run: Run) -> Counter[str]:
     return Counter(
-        agent=len(run.agents),
+        agent=len([agent for agent in run.agents if not SLOT_NAME.fullmatch(agent)]) + len(play.sessions),
         session=len(play.ends),
         action=sum(1 for _ in _agent_actions(play, run)),
         task=1,

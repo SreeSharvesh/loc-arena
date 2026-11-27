@@ -6,6 +6,7 @@ import dataclasses
 import json
 import secrets
 import time
+from http import HTTPStatus
 from pathlib import Path
 
 import pytest
@@ -142,24 +143,27 @@ def test_a_run_config_whose_sessions_block_is_no_mapping_does_not_load(tmp_path:
         load_run_config(tmp_path / "run.yaml", Path("configs"))
 
 
-def garble_issued_workloads(app: ASGIApp) -> ASGIApp:
-    """``app``, with the body of each workload it issues blanked after IAM has issued it."""
+def spoil_issued_workloads(app: ASGIApp, *, failed: bool) -> ASGIApp:
+    """``app``, answering each workload it issues blank, or as a server error when ``failed``."""
 
-    async def garbled(scope: Scope, receive: Receive, send: Send) -> None:
-        async def send_blank(message: Message) -> None:
+    async def spoiled(scope: Scope, receive: Receive, send: Send) -> None:
+        async def send_spoiled(message: Message) -> None:
+            if message["type"] == "http.response.start" and failed:
+                message = {**message, "status": HTTPStatus.INTERNAL_SERVER_ERROR}
             if message["type"] == "http.response.body":
                 message = {**message, "body": b" " * len(message.get("body", b""))}
             await send(message)
 
         issuing = scope["type"] == "http" and scope["method"] == "POST" and scope["path"] == "/workloads"
-        await app(scope, receive, send_blank if issuing else send)
+        await app(scope, receive, send_spoiled if issuing else send)
 
-    return garbled
+    return spoiled
 
 
-def test_a_start_whose_issued_answer_is_unreadable_keeps_its_slot_taken(tmp_path: Path) -> None:
+@pytest.mark.parametrize("failed", [False, True], ids=["unreadable", "a server error"])
+def test_a_start_whose_issue_iam_answered_badly_keeps_its_slot_taken(tmp_path: Path, failed: bool) -> None:
     config, iam = seed(tmp_path, "automatic")
-    with serving(garble_issued_workloads(create_app(iam))) as url:
+    with serving(spoil_issued_workloads(create_app(iam), failed=failed)) as url:
         sessions = sessions_of(config, tmp_path, url)
         sessions.start("agent-main", None, "Profile it.")
 

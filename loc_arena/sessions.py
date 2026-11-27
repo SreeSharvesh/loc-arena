@@ -103,7 +103,7 @@ class Sessions:
         self._taken: dict[str, str] = {}  # each slot a session took, with its starter
         self._working: dict[str, PiSession] = {}
         self._ending: list[PiSession] = []  # what play's end stopped, still to exit
-        self._ends: list[SessionEnd] = []
+        self._ends: dict[str, SessionEnd] = {}  # by slot, as an agent's end is by its id
         self._lock = threading.Lock()
         self._ended = False
 
@@ -144,7 +144,10 @@ class Sessions:
             self._write(
                 {
                     "session": slot,
-                    "end": {"reason": "failed", "stderr": f"IAM's answer to its issue was lost: {lost!r}"},
+                    "end": {
+                        "reason": "failed",
+                        "stderr": f"IAM's answer to its issue was lost: {type(lost).__name__}",
+                    },
                 },
             )
             return {"error": f"{slot} could not start: IAM's answer to its issue was lost"}
@@ -182,13 +185,13 @@ class Sessions:
             ending = dict(self._working)
         for slot, session in ending.items():
             end = session.stop()
-            self._ends.append(end)
+            self._ends[slot] = end
             self._write({"session": slot, "end": {"reason": end.reason, "stderr": end.stderr}})
         self._ending.extend(ending.values())
 
-    def list_ends(self) -> list[SessionEnd]:
-        """How each session that worked in play ended, once ``end`` stopped them."""
-        return list(self._ends)
+    def read_ends(self) -> dict[str, SessionEnd]:
+        """How each session that worked in play ended, by its slot, once ``end`` stopped them."""
+        return dict(self._ends)
 
     def wait(self, seconds: float) -> None:
         """Wait for what ``end`` stopped to exit, killing what is still there after ``seconds``."""
@@ -270,21 +273,21 @@ class Sessions:
             }
             issued = client.post(url, json=body, headers={**headers, "Idempotency-Key": slot})
             if (
-                issued.is_success
-            ):  # issued: an answer that does not parse raises ValidationError, not a refusal
-                return _Workload.model_validate_json(issued.text)
-            return _read(issued, _Workload)
+                issued.status_code == HTTPStatus.FORBIDDEN
+            ):  # IAM's no, the one answer that proves nothing issued
+                return _read(issued, _Workload)
+            issued.raise_for_status()  # any other failure may follow the issue, as an unreadable answer may
+            return _Workload.model_validate_json(issued.text)
 
     def _open(self, slot: str, starter: str, kind: str, task: str, model: str | None) -> str | None:
         """Clone ``slot``'s checkout and start its pi on ``task``; why it did not, if it did not."""
         try:
-            self._add_checkout(slot, open_checkout(self._config, slot, self._sandboxes[slot]))
-            with self._lock:  # pi starts only while play goes on, and is then in what play's end stops
-                return (
-                    "play ended before it started"
-                    if self._ended
-                    else self._launch(slot, starter, kind, task, model)
-                )
+            checkout = open_checkout(self._config, slot, self._sandboxes[slot])
+            with self._lock:  # it joins play's checkouts and pi starts only while play goes on
+                if self._ended:
+                    return "play ended before it started"
+                self._add_checkout(slot, checkout)
+                return self._launch(slot, starter, kind, task, model)
         except (OSError, KeyError, ValueError, RuntimeError) as error:  # its checkout, its home or its pi
             return str(error)
 

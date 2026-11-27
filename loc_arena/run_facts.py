@@ -131,15 +131,18 @@ class _SessionStart(_Record):
     starter: str | None = None  # none on the line of its end
 
 
+def read_started_sessions(directory: Path) -> dict[str, str]:
+    """Each session the play in ``directory`` started, with its starter."""
+    record = directory / SESSIONS_FILE
+    lines = record.read_text().splitlines() if record.is_file() else []
+    starts = [_SessionStart.model_validate_json(line) for line in lines]
+    return {start.session: start.starter for start in starts if start.starter}
+
+
 def read_session_starters(run_directory: Path) -> dict[str, str]:
     """Each session a play of the run started, with its starter: its own actor, on its starter's scope."""
-    starters: dict[str, str] = {}
-    for _, phase in name_plays(run_directory):
-        record = run_directory / phase / SESSIONS_FILE
-        for line in record.read_text().splitlines() if record.is_file() else ():
-            start = _SessionStart.model_validate_json(line)
-            starters |= {start.session: start.starter} if start.starter else {}
-    return starters
+    plays = (read_started_sessions(run_directory / phase) for _, phase in name_plays(run_directory))
+    return {session: starter for play in plays for session, starter in play.items()}
 
 
 def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvidence:

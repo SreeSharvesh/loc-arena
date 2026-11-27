@@ -563,5 +563,6 @@ def play_own_sessions(
             sessions,
         )
         turns.end()  # a command still running ends before the checkouts are captured
+    ended |= sessions.read_ends()  # each session's beside the agents', by its slot
     record_session_ends(directory, ended)
     return ended

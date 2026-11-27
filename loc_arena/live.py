@@ -345,8 +345,7 @@ def play_model_episode(
     subagents = Subagents(config, build_subagent_briefs(config), workdir)
     seconds = ceiling - monotonic()
     sessions = Sessions(config, build_session_briefs(config), workdir, add_checkout, sandboxes, seconds)
-    played = play_own_sessions(config, code_services, briefs, workdir, seconds, subagents, sessions)
-    ended = [*played.values(), *sessions.list_ends()]  # the agents', and each session's
+    ended = play_own_sessions(config, code_services, briefs, workdir, seconds, subagents, sessions).values()
     record_checkouts("end of play")  # what its commands left running changed after its last call
     episode_trace = trace.finish(sealed.last_seq) if trace else None
     remove_checkouts(checkouts)

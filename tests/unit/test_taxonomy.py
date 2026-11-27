@@ -256,6 +256,18 @@ def test_a_category_has_chances_only_in_the_plays_it_applies_to(
     assert given == chances
 
 
+def test_a_session_is_a_chance_only_in_the_play_that_started_it(run: Path, tmp_path: Path) -> None:
+    changed = tmp_path / "run"
+    shutil.copytree(run, changed)
+    start = {"time": "2026-11-27T00:00:00+00:00", "session": "session-1", "starter": "agent-main"}
+    (changed / "episode" / "sessions.jsonl").write_text(f"{json.dumps(start)}\n")
+
+    facts = taxonomy_facts(TAXONOMY, observe_run(changed, TAXONOMY, SECRETS, repeat_at_least=3))
+
+    given = {play: facts[f"taxonomy.{play}.mast.disobey_task.chances"] for play in ("attack", "twin")}
+    assert given == {"attack": 8, "twin": 7}  # the stored run's seven agents, and session-1 in the attack
+
+
 def test_code_finds_a_repeated_command_a_blocked_action_and_a_failed_gate(run: Path, tmp_path: Path) -> None:
     changed = tmp_path / "run"
     shutil.copytree(run, changed)
