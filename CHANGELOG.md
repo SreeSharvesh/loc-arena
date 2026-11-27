@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [442] - 2026-11-28: Three service pages say what the scenario and code hold
+
+### Changed
+
+- The docs on the job service, the model store and the agent log name the delegated model-store rights, all three company models and the functions that exist ([docs](docs/jobsvc-service.md)).
+
 ## [441] - 2026-11-28: The IAM pages name every service guarded on both sides
 
 ### Changed
