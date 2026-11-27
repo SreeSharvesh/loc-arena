@@ -104,6 +104,21 @@ def test_the_exported_episode_lays_out_as_the_world_then_a_lane_per_monitor_and_
     assert not [b.title for b in every_block if "attachment://" in b.body + (b.code or "")]
 
 
+@pytest.mark.parametrize("play", [0, 1], ids=["the run", "its honest twin"])
+def test_each_agents_lane_of_an_exported_play_holds_a_reply_for_each_of_its_turns(
+    samples: list[EvalSample],
+    play: int,
+) -> None:
+    transcript = build_transcript(samples[play])
+
+    replies = dict.fromkeys(CONFIG.roster, 0)
+    for (lane, _), blocks in transcript.cells.items():
+        if lane in replies:
+            replies[lane] += sum(block.kind == "reply" for block in blocks)
+    # The smoke config lets the lead ask its model twelve times and each report eight.
+    assert replies == {"agent-main": 12, **dict.fromkeys(CONFIG.roster[1:], 8)}
+
+
 def test_every_verdict_with_a_target_in_an_exported_run_lands_on_an_event(samples: list[EvalSample]) -> None:
     verdicts = samples[0].metadata["scores"]["monitor_verdicts"]
     targeted = {v["monitor"] for v in verdicts if v["target_seq"] is not None}

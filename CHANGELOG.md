@@ -19,6 +19,14 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
+## [437] - 2026-11-27: The Inspect log and transcript show each agent's turns
+
+### Fixed
+
+- The record of a run, its Inspect log and transcript, shows each agent's prompts, replies and actions in that agent's lane, where every event sat under World ([docs](docs/agent-log/spec.md)).
+- The run explorer lists each agent's turns again, as it reads the same Inspect log ([docs](docs/explorer/README.md)).
+- The record's transcript puts a monitor's verdict on a model call in that call's row, where it sat among the unplaced verdicts ([docs](docs/agent-log/spec.md)).
+
 ## [434] - 2026-11-27: Three monitors read whole trajectories, over stored runs
 
 ### Added
