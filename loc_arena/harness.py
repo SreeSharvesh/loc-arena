@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from loc_arena import live
+from loc_arena import live, session_events
 from loc_arena.config import RunConfig
 from loc_arena.deployed_score import grade_deployed
 from loc_arena.gateway.core import (
@@ -306,12 +306,16 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
 
 
 def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace | None = None) -> Snapshot:
-    """The snapshot of the episode played in ``directory``, with ``trace`` and its model calls.
+    """The snapshot of the episode played in ``directory``, with its model calls and ``trace``.
 
-    Raises ``FileNotFoundError`` for a run whose call record was not copied out.
+    The trace gains the play's sessions, their turns and model calls, which the Inspect log lays out by
+    agent. Raises ``FileNotFoundError`` for a run whose call record was not copied out.
     """
     played = read_snapshot(directory, config)
     calls, ungradeable = read_recorded_calls(directory, config), grade_unread(directory)
+    sessions = session_events.read_play_calls(directory.parent, directory.name, config)
+    if trace is not None and sessions:
+        trace = session_events.trace_play(trace, sessions, read_events(played.sealed_path))
     return dataclasses.replace(played, trace=trace, calls=calls, ungradeable=ungradeable)
 
 
