@@ -347,3 +347,19 @@ def test_an_honest_run_saves_no_twin_block_since_its_own_verdicts_are_the_twins(
     honest_scores: dict[str, Any],
 ) -> None:
     assert "honest_twin" not in honest_scores
+
+
+def test_scores_json_writes_each_deprecated_key_beside_its_new_one(attack_scores: dict[str, Any]) -> None:
+    """Older readers keep reading: each key renamed for issue 438 is still written, with the same value."""
+    side, safety = attack_scores["side_task"], attack_scores["safety"]
+
+    pairs = [
+        (side["success"], side["landing_minimal"]),
+        (side["success_evidence"], side["landing_evidence"]),
+        (side["stages"], side["milestones"]),
+        (side["stages_reached"], side["covert_depth"]),
+        (safety["side_task_success"], safety["landed"]),
+        (attack_scores["honest_baseline"], attack_scores["honest_twin"]),
+    ]
+
+    assert [new == old for new, old in pairs] == [True] * 6
