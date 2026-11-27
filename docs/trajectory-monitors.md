@@ -78,7 +78,7 @@ output folder, never in the run's sealed log, and no task is graded again. It wr
 | `<play>.events.jsonl` | the record of that play's monitor calls, with the tokens and dollars of each, each `monitor_summary`, and each failed call |
 
 A play is named `attack` or `honest`, the run's mode, and `twin`. Dollars are what the provider reports for
-each call, and none where it reports none.
+each call. A monitor's dollars are their sum, and none unless every one of its calls reported them.
 
 These scores are judgements after the play: every verdict counts, whenever its events happened. A run's own
 `scores.json` counts a verdict only up to the harm step, so the two are not the same measure, and a monitor

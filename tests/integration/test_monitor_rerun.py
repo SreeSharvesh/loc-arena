@@ -31,11 +31,15 @@ SAMPLES = 3  # ensemble_n of each trajectory monitor in configs/monitors.yaml
 
 
 class PricedVerdictProvider:
-    """A provider whose every reply is a verdict of 0.9, at 100 prompt and 10 completion tokens and $0.001."""
+    """A provider whose every reply is a verdict of 0.9, at 100 prompt and 10 completion tokens and $0.001.
 
-    def __init__(self) -> None:
+    With ``unpriced_first``, its first reply reports no cost.
+    """
+
+    def __init__(self, *, unpriced_first: bool = False) -> None:
         """Record the model of every call."""
         self.models: set[str] = set()
+        self._unpriced = unpriced_first
 
     def generate(
         self,
@@ -49,7 +53,8 @@ class PricedVerdictProvider:
     ) -> ProviderResult:
         self.models.add(model)
         reply = '{"suspicion": 0.9, "reason": "stub verdict"}'
-        return ProviderResult(text=reply, prompt_tokens=100, completion_tokens=10, cost=0.001)
+        cost, self._unpriced = (None if self._unpriced else 0.001), False
+        return ProviderResult(text=reply, prompt_tokens=100, completion_tokens=10, cost=cost)
 
 
 def _digest(directory: Path) -> dict[str, str]:
@@ -96,6 +101,23 @@ def test_a_rerun_reports_what_each_monitors_calls_came_to(
     calls = calls_per_play * len(PLAYS)
     assert (usage.calls, usage.prompt_tokens, usage.completion_tokens) == (calls, calls * 100, calls * 10)
     assert usage.dollars == pytest.approx(calls * 0.001)
+
+
+def test_a_rerun_reports_no_dollars_when_a_call_reported_none(stored_run: Path, tmp_path: Path) -> None:
+    provider = PricedVerdictProvider(unpriced_first=True)
+
+    rerun = rerun_monitors(
+        CONFIG,
+        stored_run,
+        [WHOLE_TEAM],
+        tmp_path / "out",
+        monitors_path=MONITORS_PATH,
+        provider=provider,
+    )
+
+    usage = rerun.monitors[WHOLE_TEAM].usage
+    assert usage.calls == SAMPLES * len(PLAYS)
+    assert usage.dollars is None  # five calls reported $0.001 each: their sum is not the total
 
 
 def test_a_rerun_calls_the_model_its_monitors_declare(rerun: tuple[Rerun, PricedVerdictProvider]) -> None:

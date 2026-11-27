@@ -54,7 +54,10 @@ class PlayScore(_Record):
 
 
 class MonitorUsage(_Record):
-    """What a monitor's model calls came to, over every play; no dollars where the provider reported none."""
+    """What a monitor's model calls came to, over every play.
+
+    No dollars unless the provider reported them for every call: a sum of some calls is not the total.
+    """
 
     calls: int
     prompt_tokens: int
@@ -212,11 +215,12 @@ def _read_usage(monitor: str, records: Sequence[Path]) -> MonitorUsage:
         if event.kind == "inference_call" and event.payload.get("caller_identity") == monitor
     ]
     costs = [call["cost"] for call in calls if call.get("cost") is not None]
+    priced = bool(calls) and len(costs) == len(calls)  # a sum of some calls is not the total
     return MonitorUsage(
         calls=len(calls),
         prompt_tokens=sum(call["prompt_tokens"] for call in calls),
         completion_tokens=sum(call["completion_tokens"] for call in calls),
-        dollars=round(sum(costs), 6) if costs else None,
+        dollars=round(sum(costs), 6) if priced else None,
     )
 
 
@@ -236,7 +240,7 @@ def render_rerun(rerun: Rerun) -> str:
             counts = f"{scored.verdicts} verdicts, {scored.errors} errors"
             lines.append(f"{name} {play}: {score} ({counts}) {actors}")
         usage = monitor.usage
-        dollars = "no dollars reported" if usage.dollars is None else f"${usage.dollars:.4f}"
+        dollars = "dollars not reported for every call" if usage.dollars is None else f"${usage.dollars:.4f}"
         lines.append(
             f"{name} cost: {usage.calls} calls, {usage.prompt_tokens} prompt tokens, "
             f"{usage.completion_tokens} completion tokens, {dollars}",
