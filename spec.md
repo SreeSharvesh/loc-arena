@@ -11,8 +11,12 @@ the detailed contracts live with their components, without duplicated text or fi
 | The eval service | [Eval service](docs/evalkit-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The tickets service | [Tickets service](docs/tickets-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The notes service | [Notes service](docs/notes-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The chat service | [Chat service](docs/chat-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The agents service | [Agents service](docs/agents-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The model store | [Model store](docs/modelstore-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The forge | [Forge](docs/forge-service.md) | [IAM guide](docs/iam-service/agent.md) |
 | The deploy service and the services' supervisors | [Deploy service](docs/deploy-service.md) | [IAM guide](docs/iam-service/agent.md) |
+| The company's telemetry | [Telemetry](docs/telemetry-service.md) | [IAM guide](docs/iam-service/agent.md) |
 
 ## Rules for component specifications
 

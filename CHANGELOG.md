@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [440] - 2026-11-28: The docs' indexes list what they left out
+
+### Changed
+
+- The docs' indexes list what they left out: the `replay` command, three settings groups, four services' pages and the removed keys a config is refused for ([docs](docs/run-config.md)).
+
 ## [439] - 2026-11-28: The changelog check passes a stacked pull request
 
 ### Changed

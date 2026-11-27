@@ -23,7 +23,9 @@ and plays of 25 minutes, checks that an agent can add an operation to a service,
 Every block is a frozen pydantic dataclass with a description per field, so `dataclasses.replace` builds the honest
 baseline and re-validates it. Scalars are `Strict*` types: YAML `"30"` or `true` never becomes an int. A prompt is set
 only by its `*_ref` key, resolved in a before-validator to its text ([Prompts](#prompts)). A missing or invalid field is a `ConfigError` naming its
-path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it.
+path. A key no block declares is ignored, except in an agent's `scope` and in the settings groups, which refuse it, and
+the keys of the removed turn loop and scripted runs (`policy`, `scripted_moves`, `agent_loop`, and in `episode`
+`max_spawn_depth`, `max_live_subagents`, `max_total_agents` and `subagent_idle_timeout_seconds`) and the keys renamed to the literature's terms ([Terms](#terms)), which fail the load.
 
 ## Top-level keys
 
@@ -41,7 +43,7 @@ path. A key no block declares is ignored, except in an agent's `scope` and in th
 | `protocol` | the control protocol: monitors, reviewer, audit budget |
 | `logging` | `logging.agent_transcript` for the per-agent `.eval` and transcript |
 | `prompts`, `workspace_prompt_ref`, `task_description_ref` | the scenario's prompt files the run sends; the one every agent's brief says of its workspace; the main task as the monitors are told it ([Prompts](#prompts)) |
-| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `pi`, `cost`, `publish` | the settings groups below |
+| `inference`, `gateway`, `stack`, `iam`, `evalkit`, `jobsvc`, `tickets`, `chat`, `notes`, `agents_service`, `forge`, `history`, `modelstore`, `serving`, `deploy`, `telemetry`, `pi`, `reader`, `cost`, `publish` | the settings groups below |
 
 ## An agent
 
