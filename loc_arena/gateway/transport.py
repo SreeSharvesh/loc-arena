@@ -1,15 +1,12 @@
-"""HTTP transport shared by the edge and the client.
+"""How the edge reaches the core.
 
-Enforces nothing on its own; it is the plumbing the tamperable edge uses to relay to the sealed core and
-the in-sandbox client uses to reach the edge. A ``Transport`` is a single ``post_json`` call, so tests can
-inject an in-process transport (over the FastAPI app) in place of a real network client.
+Enforces nothing on its own. A ``Transport`` is a single ``post_json`` call: a run hands the edge the core in
+its own process (``core.DirectTransport``), and tests inject one over the core's FastAPI app.
 """
 
 from __future__ import annotations
 
 from typing import Any, Protocol
-
-import httpx2
 
 
 class Transport(Protocol):
@@ -18,19 +15,3 @@ class Transport(Protocol):
     def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
         """Send ``body`` to ``path`` and return the decoded JSON response."""
         ...
-
-
-class HttpxTransport:
-    """A real network transport to a base URL (used in the running docker stack)."""
-
-    def __init__(self, base_url: str, *, timeout: float = 60.0) -> None:
-        """Hold the base URL and per-request timeout for the target service."""
-        self._base_url = base_url.rstrip("/")
-        self._timeout = timeout
-
-    def post_json(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
-        """POST ``body`` as JSON to ``base_url + path`` and return the decoded reply."""
-        resp = httpx2.post(f"{self._base_url}{path}", json=body, timeout=self._timeout)
-        resp.raise_for_status()
-        result: dict[str, Any] = resp.json()
-        return result
