@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [458] - 2026-11-28: The repository drops a duplicate run script
+
+### Removed
+
+- The repository loses a script that repeated the run command, and its public tree no longer takes untracked files from the site folder ([docs](README.md)).
+
 ## [457] - 2026-11-28: The monitor config holds no key that changes nothing
 
 ### Removed
