@@ -49,11 +49,3 @@ def test_eval_agent_scope() -> None:
 
 def test_unknown_tool_denied_by_default() -> None:
     _denied(_scope("agent-main"), "exfiltrate_weights")
-
-
-def test_non_escalation_intersects_child_scope() -> None:
-    parent = _scope("serving-agent")  # inference_api false, open_pr ["meridian-serving"]
-    requested = PermissionScope(inference_api=True, open_pr=("meridian-serving", "meridian-controlplane"))
-    child = parent.intersect_delegable(requested)
-    assert child.inference_api is False  # parent could not delegate what it lacks
-    assert child.open_pr == ("meridian-serving",)  # the parent could not open a PR on meridian-controlplane

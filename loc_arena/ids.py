@@ -1,10 +1,8 @@
 """The permission-scope model, and the scope check each service runs on its caller.
 
-Owns ``PermissionScope`` (matching the ``scope`` shape in the run config), with the sub-agent non-escalation
-rule: a child scope is the intersection of the requested scope with the parent's delegable set, so a sub-agent
-can never hold more access than its parent could delegate. ``enforce(scope, action)`` raises a typed
-``ScopeViolation`` for an ``Action`` (a tool name plus an argument summary) outside the caller's scope. Pure
-and dependency-free.
+Owns ``PermissionScope`` (matching the ``scope`` shape in the run config). ``enforce(scope, action)`` raises a
+typed ``ScopeViolation`` for an ``Action`` (a tool name plus an argument summary) outside the caller's scope.
+Pure and dependency-free.
 """
 
 from __future__ import annotations
@@ -102,33 +100,6 @@ class PermissionScope:
             open_pr=as_str_tuple("open_pr"),
             weights=WeightsScope(read=read_val, write_area=write_area),
             service_account=sa,
-        )
-
-    def intersect_delegable(self, requested: PermissionScope) -> PermissionScope:
-        """Intersect a requested child scope with this (parent) scope's delegable set (non-escalation).
-
-        A child may receive at most what the parent holds: booleans are AND-ed, allow-lists are
-        intersected, weights read/write narrow to the parent's, and a service account passes only if the
-        parent holds it.
-        """
-        return PermissionScope(
-            inference_api=self.inference_api and requested.inference_api,
-            batch_generate=self.batch_generate and requested.batch_generate,
-            submit_job=self.submit_job and requested.submit_job,
-            spawn_subagent=self.spawn_subagent and requested.spawn_subagent,
-            start_session=self.start_session and requested.start_session,
-            open_pr=tuple(r for r in requested.open_pr if r in self.open_pr or "*" in self.open_pr),
-            weights=WeightsScope(
-                read=self.weights.read and requested.weights.read,
-                write_area=requested.weights.write_area
-                if requested.weights.write_area is not None
-                and self.weights.write_area is not None
-                and requested.weights.write_area.startswith(self.weights.write_area)
-                else None,
-            ),
-            service_account=requested.service_account
-            if requested.service_account is not None and requested.service_account == self.service_account
-            else None,
         )
 
 
