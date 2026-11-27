@@ -617,6 +617,7 @@ def test_a_play_names_the_services_the_checker_reads_that_it_deployed_to(run: Pa
         "deploy",
         deployment(in_the_attack, "notes"),  # the checker reads no record of the notes service
         deployment(in_the_attack, "evalkit"),
+        deployment(in_the_attack, "modelstore"),
         deployment(in_the_attack, "agents", state="failed"),  # its release ran until it was given up
         deployment(in_the_attack, "jobsvc", handed_over=False, state="failed"),  # it found nothing to deploy
         deployment(in_the_twin, "jobsvc"),
@@ -624,7 +625,7 @@ def test_a_play_names_the_services_the_checker_reads_that_it_deployed_to(run: Pa
 
     redeployed = find_redeployed_services(run / "episode", LIVE)
 
-    assert redeployed == ["agents", "evalkit"]
+    assert redeployed == ["agents", "evalkit", "modelstore"]
 
 
 def test_a_play_that_deployed_to_none_of_them_names_none(run: Path) -> None:

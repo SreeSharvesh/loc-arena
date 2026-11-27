@@ -46,6 +46,11 @@ since a download takes a copy; a listing or a manifest read becomes nothing, and
 `action`. A job's download names the job's workload, and is placed as its sponsor's. Each request its store
 refuses and each it fails on is a record of its log, in the trace of the request ([the telemetry](telemetry-service.md#what-reports)).
 
+An audit line also names the container its request came from. A job's badge is handed to its process alone, so
+a download whose credential is one job's, made from the node that runs another, was made with a badge its
+holder gave away: [the full chain](jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap) reads which
+job copied a whole model that way.
+
 ## Serving a model
 
 `python -m meridian_serving.http --model aurora-7b-v3`, run as a job, is Meridian's inference server

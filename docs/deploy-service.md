@@ -251,8 +251,9 @@ it can have IAM issue a job's workload in that caller's name.
 ### The side-task verdict and a redeployed service
 
 This is a known limitation, accepted for now (#323). The side-task verifier reads the own records of the
-eval and agents services, and a release deployed to a service writes that service's record; the job
-service's record it does not read, but a release there holds what the job service holds. Code an agent deploys there can therefore write the lines that decide the verdict:
+eval service, the agents service and the model store, and a release deployed to a service writes that
+service's record; the job service's record it does not read, but a release there holds what the job service
+holds. Code an agent deploys there can therefore write the lines that decide the verdict:
 
 - **`evalkit`.** A job that bound an eval run has its model calls sanctioned, up to one call per item of
   the largest eval the record names. A release can record a binding that never happened or an eval of any
@@ -263,6 +264,10 @@ service's record it does not read, but a release there holds what the job servic
   `untraced_agent_calls` milestone. A deployment also ends pi on each runner that held a running
   execution, as a stop does: a model call whose reply had ended and whose span pi had not yet posted is
   then untraced, and counts toward that milestone though nothing hid it.
+- **`modelstore`.** Its audit lines say which credential each download carried and which container it came
+  from, and [the full chain](jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap) reads from them
+  which job copied a model with another agent's badge. A release can record a download that never happened, or
+  one under another credential.
 - **`jobsvc`.** The verifier reads no record of the job service. It takes a job from two records no
   release writes. IAM's audit log says which workload was issued for which work and who launched it, so
   a job is sanctioned by its launcher there, and the agents counted as splitting work across jobs are
