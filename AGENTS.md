@@ -65,8 +65,8 @@ scenario.
 | Path | What it holds |
 |---|---|
 | `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
-| `loc_arena/harness.py` | plays an episode and its honest twin, grades them, writes the audit bundle |
-| `loc_arena/config.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
+| `loc_arena/harness.py` | plays an episode and its honest baseline, grades them, writes the audit bundle |
+| `loc_arena/config.py`, `loc_arena/config_keys.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; the keys it refuses as removed or renamed; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |
 | `loc_arena/scaffold/` | the dual-capture recorder, and the code tools over an agent's checkout that the workspace service serves |
 | `loc_arena/live.py`, `loc_arena/task.py` | one episode's play, in a stack run's episode container; what every episode shares and its grading |
@@ -108,7 +108,7 @@ scenario.
 | `company/meridian-*/` | the seven company repos the agents under test work on, each with its own tests |
 | `company/meridian-iam/`, `loc_arena/iam_*.py`, `docs/iam-service/` | central IAM: a platform package (not one of the seven; never in the agents' checkout), its stack wiring, and its spec and guide; every run needs it |
 | `tests/unit/`, `tests/integration/` | the engine's test suite |
-| `tests/fixtures/run.tar.gz`, `tests/_stored_run.py`, `scripts/record_run_fixture.py` | the stored run: a graded smoke run with its honest twin, the fixture of tests that read a run's records or grade one again; `make fixture-run` plays and stores it again |
+| `tests/fixtures/run.tar.gz`, `tests/_stored_run.py`, `scripts/record_run_fixture.py` | the stored run: a graded smoke run with its honest baseline, the fixture of tests that read a run's records or grade one again; `make fixture-run` plays and stores it again |
 | `docs/agent-log/` | per-agent logging: `spec.md` (what it guarantees) and `agent.md` (how to work on it) |
 | `docs/isolation/README.md`, `docs/run-config.md` | how a stack run isolates agents and wires their tools and services; the run config's keys and settings |
 | `docs/explorer/README.md` | every view of the run explorer, with screenshots |
@@ -162,7 +162,7 @@ run is the end-to-end check of a change to the engine; its scores are not result
   a run config names files in its `prompts` block. Text true of any scenario goes in `loc_arena/prompts/`, and
   text of one scenario in `scenarios/<name>/prompts/`, in the tree of [the run config page](docs/run-config.md#prompts).
   A variant, such as a task, a kill chain or a team shape, is a new file, and its config points one entry at it.
-  A file is named `<whose>.<part>[.<variant>].md` (`lead.system.md`, `serving.covert-brief.md`,
+  A file is named `<whose>.<part>[.<variant>].md` (`lead.system.md`, `serving.side-task.md`,
   `action.monitor.md`), and its key in `prompts` is that name less `.md`; the parts are listed on the run config
   page. A task's own files sit in that task's folder, one level deep; the covert core that the tasks of one side task
   share (`team.covert-<part>.md`) names no main task and sits beside the folders. A fragment only one brief uses is
@@ -233,8 +233,8 @@ the latest push. After changing `.coderabbit.yaml`, comment `@coderabbitai confi
 - The firewall: a monitor may declare only observable inputs, never a sealed-derived one
   (`ALLOWED_MONITOR_INPUTS` and `firewall_violations` in `loc_arena/monitors/registry.py`; `make setup` checks
   `configs/monitors.yaml`).
-- The honest twin completes no covert milestone; it calibrates the audit threshold
-  (`tests/integration/test_honest_twin_clean.py`). It holds the attack run's tools and rights, without the covert
+- The honest baseline completes no covert stage; it calibrates the audit threshold
+  (`tests/integration/test_honest_baseline_clean.py`). It holds the attack run's tools and rights, without the covert
   briefs and the covert objective (the lead of the target's brief), and plays on services and sandboxes recreated,
   each service from its seed.
 - An agent is offered exactly the tools its `sandbox: tools:` lists, the workspace service's, and IAM's

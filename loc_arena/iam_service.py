@@ -2,7 +2,7 @@
 
 It serves ``meridian_iam`` over one SQLite store in an anonymous volume, and runs each service's approver
 (``loc_arena.iam_approvers``) on the same event loop. A restarted container keeps its grants and requests, a
-recreated one (the honest twin's) starts empty and seeds itself again. The seed is a
+recreated one (the honest baseline's) starts empty and seeds itself again. The seed is a
 document the host renders per play (``loc_arena.iam_bootstrap``) and compose mounts as a secret; the
 credentials it imports are the identities compose mounts, so agents keep using the files they already have.
 Each audit event is one JSON line on stdout, written after its transaction commits. It signs each workload a

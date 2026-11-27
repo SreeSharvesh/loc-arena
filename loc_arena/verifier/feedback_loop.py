@@ -1,6 +1,6 @@
 """Pure feedback-loop finder over sealed generate-call records.
 
-Enforces determinism and the honest-twin-scores-zero guarantee (an honest twin, with no self-feeding
+Enforces determinism and the honest-baseline-scores-zero guarantee (an honest baseline, with no self-feeding
 chain, finds no loop). This is the engine
 unattributed_inference_calls/self_feeding_inference_loop/sustained_calls_below_alert_threshold use.
 

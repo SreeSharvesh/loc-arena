@@ -12,7 +12,7 @@ from inspect_ai.event import InfoEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_ai.log import EvalConfig, EvalDataset, EvalSample, EvalSpec, read_eval_log
 from loc_arena.config import load_run_config
 from loc_arena.logging_ import inspect_export
-from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRef
+from loc_arena.logging_.agent_trace import AgentTrace, EpisodeTrace, ModelCall, TurnRecord, TurnRef
 from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.logging_.inspect_export import EpisodeExport, UnassignedEventError, write_run_eval
 from loc_arena.scaffold.bus import Recorder
@@ -156,11 +156,16 @@ def test_timestamp_is_an_aware_utc_datetime() -> None:
 
 def test_model_event_shows_the_post_injection_input_and_the_reply() -> None:
     call = ModelCall("executing", "batch-runner", "untrusted_agent", "OBJECTIVE\n\nbrief", "reply", 12, 0.0)
-    event = inspect_export._model_event(call, "turn:agent-main:3")
+    event = inspect_export._model_event(call, "turn:agent-main:3", mirror_seq=7)
     assert event.span_id == "turn:agent-main:3"
     assert [m.text for m in event.input] == ["OBJECTIVE\n\nbrief"]
     assert event.output.completion == "reply"
-    assert event.metadata == {"identity": "batch-runner", "phase": "executing", "sealed_seq": 12}
+    assert event.metadata == {
+        "identity": "batch-runner",
+        "phase": "executing",
+        "sealed_seq": 12,
+        "mirror_seq": 7,
+    }
 
 
 def _action(seq: int, result: dict[str, Any] | None = None, **payload: object) -> Event:
@@ -491,6 +496,34 @@ def test_timestamps_follow_turn_bounds_and_model_calls_and_world_reuses_the_last
     ]
 
 
+def test_a_turn_with_no_end_closes_when_its_last_event_was_made(tmp_path: Path) -> None:
+    sealed_path = tmp_path / "sealed.jsonl"
+    asked = dataclasses.replace(_tick(0), kind="inference_call", actor_uid="agent-main", turn=1)
+    AppendOnlyLog(sealed_path, "ep-export").append(asked)
+    last_turn = TurnRecord(TurnRef("agent-main", 1), 100.0, float("inf"))
+    call = ModelCall(None, "agent-main", "untrusted_agent", "prompt", "reply", 0, 130.0)
+    episode = EpisodeExport(
+        "episode",
+        EpisodeTrace((last_turn,), {}, {}, {}, (call,), -1),
+        sealed_path,
+        ("agent-main",),
+    )
+
+    path = write_run_eval(
+        tmp_path / "run.eval",
+        run_name="run-x",
+        config=CFG,
+        mode="attack",
+        seed=1,
+        scores={},
+        episodes=[episode],
+    )
+
+    samples = read_eval_log(str(path)).samples or []
+    closed = [event.working_start for event in samples[0].events if isinstance(event, SpanEndEvent)]
+    assert closed == [30.0, 30.0, 30.0]
+
+
 LONG_REPLY, LONG_REASONING = "the reply " * 60, "I should not do that. " * 60
 
 
@@ -509,11 +542,11 @@ LONG_REPLY, LONG_REASONING = "the reply " * 60, "I should not do that. " * 60
         ),
         (
             {"episode": "the reply", "honest_cal": "the reply"},
-            [("the reply", "the run's"), ("the reply", "the twin's")],
-            {"episode": (["the run's"], "the reply"), "honest_cal": (["the twin's"], "the reply")},
+            [("the reply", "the run's"), ("the reply", "the baseline's")],
+            {"episode": (["the run's"], "the reply"), "honest_cal": (["the baseline's"], "the reply")},
         ),
     ],
-    ids=["short", "long enough to be stored as attachments", "the twin's call at the run's call's seq"],
+    ids=["short", "long enough to be stored as attachments", "the baseline's call at the run's call's seq"],
 )
 def test_each_model_call_gets_the_reasoning_the_gateway_kept_for_its_own_reply(
     tmp_path: Path,

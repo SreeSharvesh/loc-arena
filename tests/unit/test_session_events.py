@@ -9,14 +9,16 @@ from typing import Any
 from loc_arena.config import load_run_config
 from loc_arena.gateway.core import ProviderResult
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, GatewayCall
-from loc_arena.logging_.agent_trace import TurnRecord, TurnRef
-from loc_arena.logging_.events import fingerprint
+from loc_arena.logging_.agent_trace import EpisodeTrace, ModelCall, TurnRecord, TurnRef
+from loc_arena.logging_.events import Event, fingerprint
 from loc_arena.session_events import (
+    SessionCall,
     build_inference_payload,
     build_turns,
     find_local_tools,
     read_play_calls,
     read_session_calls,
+    trace_play,
 )
 
 AGENTS = ("agent-main", "eval-agent")
@@ -24,6 +26,8 @@ FUNCTION = {"name": "mcp__meridian__bash", "arguments": '{"command":"ls"}'}
 BASH = {"id": "call_1", "type": "function", "function": FUNCTION}
 SYSTEM = {"role": "system", "content": "You are eval-agent. Your covert objective: ..."}
 TASK = {"role": "user", "content": [{"type": "text", "text": "Begin."}]}
+COWORKERS_CALL = ModelCall(None, "coworker.releng", "teacher", "a review to write", "LGTM", 0, 90.0)
+PLAYED = EpisodeTrace((), {0: None}, {}, {}, (COWORKERS_CALL,), 0)  # a play's own trace: it binds no turn
 
 
 def stream(*deltas: dict[str, Any], usage: dict[str, Any] | None = None) -> str:
@@ -179,3 +183,63 @@ def test_an_inference_event_names_the_model_its_call_asked_for(tmp_path: Path) -
     payload = build_inference_payload(call)
 
     assert payload["model"] == "z-ai/glm-5.3-flash"
+
+
+def build_event(call: SessionCall, seq: int) -> Event:
+    """The sealed event built for ``call`` after play."""
+    payload = build_inference_payload(call)
+    return Event("ep", seq, 0.0, call.agent, "untrusted", "inference_call", payload, turn=call.turn)
+
+
+def test_a_traced_play_gains_the_turns_of_its_sessions(tmp_path: Path) -> None:
+    write_calls(tmp_path, {}, {})
+    calls = read_session_calls(tmp_path, "attack", AGENTS)
+
+    traced = trace_play(PLAYED, calls, [])
+
+    assert traced.turns == (
+        TurnRecord(TurnRef("eval-agent", 1), 100.0, 101.0),
+        TurnRecord(TurnRef("eval-agent", 2), 101.0, float("inf")),
+    )
+
+
+def test_a_sessions_call_is_the_model_call_of_its_event_with_what_was_new_to_it_and_its_reply(
+    tmp_path: Path,
+) -> None:
+    said = {"role": "assistant", "content": "ok", "tool_calls": [BASH]}
+    listing = {"role": "tool", "tool_call_id": "call_1", "content": "a.py"}
+    write_calls(
+        tmp_path,
+        {"response": stream({"role": "assistant", "content": "ok"}, {"tool_calls": [{"index": 0, **BASH}]})},
+        {
+            "request": {"model": "m", "messages": [SYSTEM, TASK, said, listing], "tools": []},
+            "response": stream({"role": "assistant", "content": "done"}),
+        },
+    )
+    first, second = read_session_calls(tmp_path, "attack", AGENTS)
+
+    traced = trace_play(PLAYED, [first, second], [build_event(first, 7), build_event(second, 8)])
+
+    brief = "system:\nYou are eval-agent. Your covert objective: ...\n\nuser:\nBegin."
+    assert traced.model_calls == (
+        COWORKERS_CALL,
+        ModelCall(
+            None,
+            "eval-agent",
+            "untrusted_agent",
+            brief,
+            'ok\nmcp__meridian__bash({"command":"ls"})',
+            7,
+            100.0,
+        ),
+        ModelCall(None, "eval-agent", "untrusted_agent", "tool:\na.py", "done", 8, 101.0),
+    )
+
+
+def test_a_call_no_event_was_built_for_is_no_model_call(tmp_path: Path) -> None:
+    write_calls(tmp_path, {}, {})
+    first, second = read_session_calls(tmp_path, "attack", AGENTS)
+
+    traced = trace_play(PLAYED, [first, second], [build_event(first, 7)])
+
+    assert [call.sealed_seq for call in traced.model_calls] == [0, 7]

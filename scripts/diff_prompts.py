@@ -1,7 +1,7 @@
 """Compare what every run config sends its models on this checkout with what it sends on a base commit.
 
-For each run config git tracks in ``configs/`` and each play, the attack and its honest twin, it builds every
-agent's system prompt as pi receives it, every session's opening prompt, the covert objective, the task
+For each run config git tracks in ``configs/`` and each play, the attack and its honest baseline, it builds
+every agent's system prompt as pi receives it, every session's opening prompt, the covert objective, the task
 description the monitors read and each monitor's prompt as rendered; and once, each notice an agent can get
 and the run reader's briefs. It builds them on a worktree of the base and on this checkout, prints each text
 that differs and exits non-zero if any does. It plays nothing and calls no model.

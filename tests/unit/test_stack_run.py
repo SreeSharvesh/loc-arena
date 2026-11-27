@@ -1,4 +1,4 @@
-"""A stack run's flow over compose: each play, what is copied out and when, and the twin's renewal.
+"""A stack run's flow over compose: each play, what is copied out and when, and the baseline's renewal.
 
 Compose is a fake that records each call; the run directory, the logs and the merged main are real files.
 """
@@ -100,7 +100,7 @@ def test_a_stack_run_copies_each_live_services_log_out_before_it_removes_the_pro
 @pytest.mark.parametrize(
     ("failing", "mode", "plays_passing"),
     [("notes", "honest", 0), ("python3.13", "honest", 0), ("python3.13", "attack", 1)],
-    ids=["a-live-services-log", "phoenixs-spans-at-the-end-of-play", "phoenixs-spans-before-the-twin"],
+    ids=["a-live-services-log", "phoenixs-spans-at-the-end-of-play", "phoenixs-spans-before-the-baseline"],
 )
 def test_a_record_that_cannot_be_copied_out_keeps_the_project(
     docker: FakeDocker,
@@ -280,7 +280,7 @@ def test_a_graded_stack_runs_inspect_log_gets_the_reasoning_its_gateway_recorded
     assert read_shown_reasoning(bundle) == {"episode": (["I should not do that."], "the reply")}
 
 
-def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_the_episode_for_the_twin(
+def test_an_attack_stack_run_drains_the_record_then_renews_every_container_but_the_episode_for_the_baseline(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
@@ -383,7 +383,7 @@ def test_a_company_server_that_does_not_load_stops_the_run_before_any_play(
     assert docker.plays == 0
 
 
-def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_then_the_honest_twins(
+def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_then_the_honest_baselines(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
@@ -395,7 +395,7 @@ def test_a_stack_runs_service_log_holds_the_lines_of_the_episodes_container_and_
     assert read_copied_log(tmp_path, "notes") == NOTES_LOG * 2
 
 
-def test_a_log_that_cannot_be_copied_before_the_honest_twin_keeps_the_project_and_renews_nothing(
+def test_a_log_that_cannot_be_copied_before_the_honest_baseline_keeps_the_project_and_renews_nothing(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
@@ -409,21 +409,21 @@ def test_a_log_that_cannot_be_copied_before_the_honest_twin_keeps_the_project_an
     assert (renewed, docker.plays, docker.verbs[-1]) == ([], 1, "stop")
 
 
-def test_containers_that_do_not_come_back_for_the_honest_twin_stop_the_run_with_every_log_copied_out(
+def test_containers_that_do_not_come_back_for_the_honest_baseline_stop_the_run_with_every_log_copied_out(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
     docker.plays_passing = 1
     docker.failing = "--force-recreate"
 
-    with pytest.raises(StackError, match="did not come back for the honest twin"):
+    with pytest.raises(StackError, match="did not come back for the honest baseline"):
         run_aurora_in_stack(tmp_path, mode="attack")
 
     copied = read_copied_log(tmp_path, "notes")
     assert (copied, docker.plays, docker.verbs[-1]) == (NOTES_LOG * 2, 1, "down")
 
 
-def test_the_honest_twin_plays_in_the_episodes_container_though_its_image_tag_moved(
+def test_the_honest_baseline_plays_in_the_episodes_container_though_its_image_tag_moved(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:
@@ -436,7 +436,7 @@ def test_the_honest_twin_plays_in_the_episodes_container_though_its_image_tag_mo
     assert ["--no-recreate" in play for play in plays] == [True, True]
 
 
-def test_a_log_file_that_cannot_be_written_before_the_honest_twin_renews_nothing_and_writes_no_log(
+def test_a_log_file_that_cannot_be_written_before_the_honest_baseline_renews_nothing_and_writes_no_log(
     docker: FakeDocker,
     tmp_path: Path,
 ) -> None:

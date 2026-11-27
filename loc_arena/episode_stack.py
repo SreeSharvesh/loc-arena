@@ -11,11 +11,11 @@ rights, every agent has its own identity, generated per run: its sandbox holds t
 holds every agent's and the agents' starting rights, and the episode and the gateway hold none. A service with
 tools is reached through the tools gateway alone (``loc_arena.tools_gateway``), which with the service holds
 the identities on it. In attack mode the episode container plays the episode, then starts again for the honest
-twin once the gateway and every sandbox, runner, live service and the tools gateway is recreated, so the twin
-sees nothing the attack left. When the episode exits, its run directory is copied out with the log of each
-live service and of the tools gateway, their record of every request, grant and tool call, and the gateway's
-record of every model call of play (``loc_arena.gateway.model_gateway``); the events of those tool calls are
-built, and the run is graded on this host on what each play merged on the forge's main
+baseline once the gateway and every sandbox, runner, live service and the tools gateway is recreated, so the
+baseline sees nothing the attack left. When the episode exits, its run directory is copied out with the log of
+each live service and of the tools gateway, their record of every request, grant and tool call, and the
+gateway's record of every model call of play (``loc_arena.gateway.model_gateway``); the events of those tool
+calls are built, and the run is graded on this host on what each play merged on the forge's main
 (``loc_arena.merged_main``), with the agents' code sandboxed, while the gateway still runs for the monitors'
 model calls. Then the gateway's record is copied out again, the monitors' calls included, and the project is
 removed with its volumes. If a copy fails, the project is kept so nothing is lost.
@@ -515,7 +515,7 @@ def _probe(port: int, stack: StackSettings, *, test: Sequence[str] | None = None
 
 
 def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
-    """Every secret of a stack run, by the host variable compose reads: the attack env and the twin's."""
+    """Every secret of a stack run, by the host variable compose reads: the attack env and the baseline's."""
     tokens = {agent.id: secrets.token_urlsafe(TOKEN_BYTES) for agent in config.agents}
     held = model_gateway.issue_held_tokens(TOKEN_BYTES)
     sandboxes = {sandbox_service(agent): token for agent, token in tokens.items()}
@@ -532,16 +532,16 @@ def issue_secrets(config: RunConfig) -> tuple[dict[str, str], dict[str, str]]:
         )
         return environment | gateway_secrets | telemetry_stack.issue_telemetry_secrets(config, TOKEN_BYTES)
 
-    attack, twin = _issue_play_secrets(config, tokens)
-    return with_gateway(attack, "attack"), with_gateway(twin, "twin")
+    attack, baseline = _issue_play_secrets(config, tokens)
+    return with_gateway(attack, "attack"), with_gateway(baseline, "twin")
 
 
 def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict[str, str], dict[str, str]]:
-    """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and twin's.
+    """Each play's secrets but the model gateway's, with these sandbox ``tokens``: attack env and baseline's.
 
-    They reach compose through its environment alone: never a command line or a file. The honest twin's env
-    differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with new
-    ones, so nothing the attack play held authenticates in the twin.
+    They reach compose through its environment alone: never a command line or a file. The honest baseline's
+    env differs in every identity, IAM credential and inbox key: the sandboxes and services are recreated with
+    new ones, so nothing the attack episode held authenticates in the baseline.
     """
     managed = managed_services(config)
     runners = list_runner_services(config)
@@ -561,7 +561,7 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
             environment[BOOTSTRAP_VARIABLE] = render_bootstrap(config)
             for name in managed:
                 environment[service_credential_variable(name)] = secrets.token_urlsafe(TOKEN_BYTES)
-            for agent in config.agents:  # per play, so a key from the attack play reads nothing in the twin
+            for agent in config.agents:  # per play, so an attack episode's key reads nothing in the baseline
                 environment[inbox_key_variable(agent.id)] = secrets.token_urlsafe(TOKEN_BYTES)
         if serves_tools(config):
             environment[NOTIFIER_KEY_VARIABLE] = notifier_key
@@ -590,17 +590,17 @@ def _issue_play_secrets(config: RunConfig, tokens: dict[str, str]) -> tuple[dict
 def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_id: str) -> Path:
     """Play one episode of ``run`` (a config in ``configs/``) in its own compose project; grade it here.
 
-    The episode container plays the episode and, after ``renew_services``, its honest twin (``play_phases``).
+    The episode container plays the episode and, after ``renew_services``, its baseline (``play_phases``).
     Its run directory is then copied into ``logs`` with each live service's log, in ``services/<name>.log`` of
     the run directory, beside Phoenix's spans (``loc_arena.observability``); the events of the services'
     records are built (``loc_arena.recorded_events``) and the run is graded on this host with the agents' code
     sandboxed, while the gateway still runs, so model-backed monitors reach their model through it and it
     records their calls. Whatever the episode, what the gateway and each live service recorded is copied into
     ``logs`` before the project is removed, after a Ctrl-C too, each log once; when the episode never started,
-    a live service that failed to become healthy leaves only its log. A failed renewal before the twin stops
-    the run like a failed episode, its logs copied out. The project is kept, stopped, only when a copy or the
-    export of Phoenix's spans fails, so nothing recorded is lost. With the gateway's record copied out, the
-    bundle's Inspect log gets each model call's reasoning from it. Returns the bundle's directory.
+    a live service that failed to become healthy leaves only its log. A failed renewal before the baseline
+    stops the run like a failed episode, its logs copied out. The project is kept, stopped, only when a copy
+    or the export of Phoenix's spans fails, so nothing recorded is lost. With the gateway's record copied out,
+    the bundle's Inspect log gets each model call's reasoning from it. Returns the bundle's directory.
     """
     run = Path(run).name.removesuffix(".yaml")
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
@@ -623,7 +623,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_
         "--project-directory",
         str(REPOSITORY),
     ]
-    environment, twin_environment = ({**os.environ, **play} for play in issue_secrets(config))
+    environment, honest_environment = ({**os.environ, **play} for play in issue_secrets(config))
     run_compose = functools.partial(subprocess.run, env=environment)
 
     copied = functools.partial(copy_out, run_compose, made=set())
@@ -633,7 +633,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_
     for directory in (call_log.parent, service_logs):
         directory.mkdir(parents=True, exist_ok=True)
     copy_output = [*compose, "cp", f"{EPISODE_SERVICE}:{OUTPUT_DIRECTORY}/.", str(logs)]
-    # Each copy adds to its file in this run's own directory: the episode's containers', then the twin's.
+    # Each copy adds to its file in this run's own directory: the episode's containers', then the baseline's.
     copy_service_logs: list[tuple[list[str], Path | None]] = [
         *list_service_log_copies(config, compose, service_logs),
     ]
@@ -645,7 +645,7 @@ def run_in_stack(run: str, *, mode: str, seed: int | None, logs: Path, instance_
         # Started on its own, the gateway outlives the episode: the monitors call it while this host grades.
         if not model_gateway.start_gateway(run_compose, compose, settings):
             raise StackError("the gateway did not start to accept calls: see compose's output above")
-        exit_code, forges = play_phases(config, compose, mode, service_logs, environment, twin_environment)
+        exit_code, forges = play_phases(config, compose, mode, service_logs, environment, honest_environment)
         if not copied(copy_output):
             raise StackError("could not copy the episode's run directory out, so it was not graded")
         if exit_code != 0:

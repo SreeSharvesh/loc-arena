@@ -63,7 +63,7 @@ make monitor RUN_DIR=<run> MONITORS=action_monitor RUN=aurora-efficiency.fast OU
 ```
 
 `MONITORS` names any monitors of the run config's monitors file, enabled or not. The command reads each
-play's mirror events, the run's own and its honest twin's, and runs those monitors over them. It needs
+play's mirror events, the run's own and its honest baseline's, and runs those monitors over them. It needs
 `OPENROUTER_API_KEY`, as grading does; without it a monitor scores as it does without a model.
 
 It changes nothing of the run. The monitors' model calls go through a gateway core that records them in the

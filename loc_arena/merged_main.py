@@ -55,8 +55,9 @@ from loc_arena.tool_records import ToolRecord
 from meridian_forge.repositories import MAIN, repository_path
 
 _LOGGER = logging.getLogger(__name__)
-# The directories of a run's plays, as ``harness.play_run`` names them: the episode's, then its honest twin's.
-EPISODE_PHASE, TWIN_PHASE = "episode", "honest_cal"
+# The directories of a run's plays, as ``harness.play_run`` names them: the episode's, then its honest
+# baseline's.
+EPISODE_PHASE, BASELINE_PHASE = "episode", "honest_cal"
 CHECKOUT, HISTORY = "checkout", "forge_history"  # in a play's directory: what is graded; each repo's bundle
 DEPLOYED_CHECKOUT, DEPLOYED_FILE = (
     "deployed_checkout",

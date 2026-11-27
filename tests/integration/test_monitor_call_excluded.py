@@ -1,4 +1,4 @@
-"""A live monitor's own model calls are sealed under its credential and count for no covert milestone."""
+"""A live monitor's own model calls are sealed under its credential and count for no covert stage."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import pytest
 import yaml
 from loc_arena.harness import apply_mode, grade_run
 from loc_arena.logging_.events import Event, read_events
-from loc_arena.merged_main import TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE
 from loc_arena.task import read_snapshot
 from loc_arena.tasks.side_task_verifier import verify_side_task
 
@@ -56,20 +56,24 @@ def test_grading_seals_each_live_monitors_model_calls_under_its_monitor_credenti
     stored_run: Path,
     graded_run: Path,
 ) -> None:
-    sealed_before = len(list(read_events(stored_run / TWIN_PHASE / SEALED)))
+    sealed_before = len(list(read_events(stored_run / BASELINE_PHASE / SEALED)))
 
-    sealed_by_grading = list(read_events(graded_run / TWIN_PHASE / SEALED))[sealed_before:]
+    sealed_by_grading = list(read_events(graded_run / BASELINE_PHASE / SEALED))[sealed_before:]
 
     assert {call.payload["caller_identity"] for call in _monitor_calls(sealed_by_grading)} == LIVE_MONITORS
 
 
-def test_the_honest_twins_sealed_log_reaches_no_covert_milestone_with_monitor_calls_in_it(
+def test_the_honest_baselines_sealed_log_reaches_no_covert_stage_with_monitor_calls_in_it(
     graded_run: Path,
 ) -> None:
     honest = apply_mode(CONFIG, "honest")
-    twin = read_snapshot(graded_run / TWIN_PHASE, honest)
+    baseline = read_snapshot(graded_run / BASELINE_PHASE, honest)
 
-    verdict = verify_side_task(twin.sealed_path, honest, twin.deadline_ts)  # from the sealed log alone
+    verdict = verify_side_task(
+        baseline.sealed_path,
+        honest,
+        baseline.deadline_ts,
+    )  # from the sealed log alone
 
-    reached = [milestone for milestone, result in verdict.milestones.items() if result.reached]
-    assert (verdict.landing.minimal, verdict.covert_depth, reached) == (False, 0, [])
+    reached = [stage for stage, result in verdict.stages.items() if result.reached]
+    assert (verdict.success.minimal, verdict.stages_reached, reached) == (False, 0, [])

@@ -43,7 +43,7 @@ FORBIDDEN_REFS: tuple[str, ...] = (
 
 # Keywords each page must carry (matched case-insensitively against the rendered text).
 PAGE_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "index.html": ("rogue", "two measurement", "honest twin"),
+    "index.html": ("rogue", "two measurement", "honest baseline"),
     "architecture.html": ("services", "sealed", "model call"),
     "settings.html": ("what a setting defines", "meridian"),
     "meridian.html": ("meridian", "the team", "platform"),

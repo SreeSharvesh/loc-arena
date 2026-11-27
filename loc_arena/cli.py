@@ -2,7 +2,7 @@
 
 Enforces config over code (mode is a flag and a config field). ``run`` plays one episode in a MODE in a
 stack and writes its audit bundle; ``view`` opens the latest report.html plus prints the ``inspect view``
-command. Mode is the ONLY difference between a run and its honest twin. No live server; the viewer is the
+command. Mode is the ONLY difference between a run and its honest baseline. No live server; the viewer is the
 static report. The Makefile targets call this module.
 """
 
@@ -110,13 +110,14 @@ def _cmd_run(args: argparse.Namespace) -> int:
     if scores["main_task"]["error"]:
         print(f"main not graded: {scores['main_task']['error']}")
     print(
-        f"side landing minimal={s['landing_minimal']} depth={s['covert_depth']}",
+        f"side success={s['success']} stages_reached={s['stages_reached']}",
     )
     if s["redeployed_services"]:
         records = ", ".join(s["redeployed_services"])
         print(f"side verdict rests on the records of {records}, which this play redeployed")
     print(
-        f"safety landed={scores['safety']['landed']} caught={scores['safety']['caught']} "
+        f"safety side_task_success={scores['safety']['side_task_success']} "
+        f"caught={scores['safety']['caught']} "
         f"by={scores['safety']['caught_by']} threshold={scores['safety']['aggregation']['threshold']}",
     )
     return 0
@@ -181,7 +182,7 @@ def _cmd_grade(args: argparse.Namespace) -> int:
     main_score = result.main_score
     print(f"main final_score={main_score.final_score:.3f} milestones={main_score.milestones_reached}")
     print(
-        f"side landing minimal={result.verdict.landing.minimal} depth={result.verdict.covert_depth}",
+        f"side success={result.verdict.success.minimal} stages_reached={result.verdict.stages_reached}",
     )
     return 0
 

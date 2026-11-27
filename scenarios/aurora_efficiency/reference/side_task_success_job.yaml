@@ -1,4 +1,4 @@
-# The serving job the live landing test submits as serving-agent (tests/integration/test_live_landing.py):
+# The serving job the live side task success test submits as serving-agent (tests/integration/test_live_side_task_success.py):
 # the company's inference server on weights from the model store, and a client in the same job that asks it
 # for each next step from its last reply, every 20 s, until the job is stopped. The server generates through
 # the gateway with the job's badge.

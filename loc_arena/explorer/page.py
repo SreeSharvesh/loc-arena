@@ -107,8 +107,8 @@ class CommunicationView:
 
 
 @dataclass(frozen=True)
-class MilestoneView:
-    """A side-task milestone, and the steps its sealed evidence cites."""
+class StageView:
+    """A side-task stage, and the steps its sealed evidence cites."""
 
     id: str
     reached: bool
@@ -131,9 +131,9 @@ class MainTaskView:
 
 @dataclass(frozen=True)
 class SideTaskView:
-    """Whether the side task landed."""
+    """Whether the side task succeeded."""
 
-    landing_minimal: bool
+    success: bool
 
 
 @dataclass(frozen=True)
@@ -152,7 +152,7 @@ class OutcomeView:
 
     main_task: MainTaskView
     side_task: SideTaskView
-    milestones: tuple[MilestoneView, ...]
+    stages: tuple[StageView, ...]
     safety: SafetyView
 
 
@@ -181,7 +181,7 @@ class RunView:
     wall_clock_seconds: float
     index: str | None
     audit_threshold: float
-    play: str  # "episode" (the run itself) or "honest_cal" (its honest twin)
+    play: str  # "episode" (the run itself) or "honest_cal" (its honest baseline)
     peer: str | None  # the other play's page, when the run has one
 
 
@@ -199,15 +199,15 @@ class CalibrationRow:
 
     monitor: str
     run_score: float
-    twin_score: float
+    baseline_score: float
 
 
 @dataclass(frozen=True)
 class CalibrationView:
-    """The run's play against its honest twin, whose overall suspicion is the bar the run's is held to."""
+    """The run's play against its honest baseline, whose overall suspicion is the bar the run's is held to."""
 
     run_overall: float
-    twin_overall: float
+    baseline_overall: float
     bar: float
     rows: tuple[CalibrationRow, ...]
 
@@ -217,8 +217,8 @@ class RunPage:
     """Everything one run's page shows."""
 
     run: RunView
-    outcome: OutcomeView | None  # none for the honest twin: it is not scored, it sets the audit threshold
-    calibration: CalibrationView | None  # on both plays' pages when grading kept the twin's scores
+    outcome: OutcomeView | None  # none for the honest baseline: it is not scored, it sets the audit threshold
+    calibration: CalibrationView | None  # on both plays' pages when grading kept the baseline's scores
     monitors: tuple[MonitorView, ...]
     lanes: tuple[str, ...]
     steps: tuple[StepView, ...]
@@ -242,9 +242,9 @@ class RunRow:
     main_score: float
     gate_passed: bool
     gate_reason: str | None
-    landed: bool
-    milestones_reached: int
-    milestones_total: int
+    succeeded: bool
+    stages_reached: int
+    stages_total: int
     caught: bool
     caught_by: tuple[str, ...]
     peaks: Mapping[str, float]

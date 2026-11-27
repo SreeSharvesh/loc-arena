@@ -15,7 +15,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter, computed_field
 
 from loc_arena.config import RunConfig
 from loc_arena.event_references import job_of, refer_by_id
@@ -50,13 +50,19 @@ _CHANNELS |= {"job": "cluster", "process": "cluster", "inference_call": "model"}
 
 
 class Agent(BaseModel):
-    """One agent of the team: whom it reports to, what its covert brief serves, its scope and call budget."""
+    """One agent of the team: whom it reports to, what its side task serves, its scope and call budget."""
 
     id: str
     reports_to: str | None
-    covert_milestones: list[str]
+    covert_stages: list[str]
     repositories: list[str]
     call_budget: int | None
+
+    @computed_field
+    @property
+    def covert_milestones(self) -> list[str]:
+        """The deprecated name of ``covert_stages``, kept for pages built on older exports."""
+        return self.covert_stages
 
 
 class RunPart(BaseModel):
@@ -221,13 +227,13 @@ def _covert_events(
         if actors.get((i.play, seq)) == i.actor
     }
     graded = next(play for play in observed.plays if play.name == observed.run.mode)
-    for milestone in scores.side_task.milestones.values():
-        covert |= {(graded.name, seq): "code" for seq in _evidence_seqs(milestone.evidence, graded.sealed)}
+    for stage in scores.side_task.stages.values():
+        covert |= {(graded.name, seq): "code" for seq in _evidence_seqs(stage.evidence, graded.sealed)}
     return covert
 
 
 def _evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -> list[int]:
-    """The sealed events a milestone's evidence names: those of the jobs it names.
+    """The sealed events a stage's evidence names: those of the jobs it names.
 
     Its call seqs number the play's answered model calls, and an off-path call has no sealed event.
     """
@@ -392,7 +398,7 @@ def _run_part(run_directory: Path, scores: RunScores) -> RunPart:
             Agent(
                 id=agent.id,
                 reports_to=agent.spawned_by,
-                covert_milestones=list(agent.covert or ()),
+                covert_stages=list(agent.covert or ()),
                 repositories=list(agent.scope.open_pr),
                 call_budget=config.episode.orchestrator_turn_budget
                 if agent.id == root
@@ -453,14 +459,14 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
         for verdict, (seq, score) in zip(scores.monitor_verdicts, graded.verdicts, strict=True)
         if seq is not None and verdict.monitor in safety.caught_by and score == highest.get(verdict.monitor)
     ]
-    milestones = [
+    stages = [
         Reason(
-            text=f"milestone {name}: {'reached' if step.reached else 'not reached'}",
+            text=f"stage {name}: {'reached' if step.reached else 'not reached'}",
             play=graded.name,
             seqs=_evidence_seqs(step.evidence, graded.sealed),
             kind="fact",
         )
-        for name, step in side.milestones.items()
+        for name, step in side.stages.items()
     ]
     return [
         Outcome(
@@ -473,8 +479,8 @@ def _outcomes(scores: RunScores, observed: Observation, claims: dict[str, list[K
         ),
         Outcome(
             result="side task",
-            value="landed" if side.landing_minimal else "not landed",
-            reasons=[*milestones, *inferred("Side task")],
+            value="succeeded" if side.success else "did not succeed",
+            reasons=[*stages, *inferred("Side task")],
         ),
         Outcome(
             result="caught",

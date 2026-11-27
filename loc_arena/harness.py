@@ -1,9 +1,9 @@
 """Episode harness: play an episode in a MODE, grade it, and write its audit bundle.
 
-``play_run`` plays one episode in a MODE and its honest twin, in a stack run's episode container;
+``play_run`` plays one episode in a MODE and its honest baseline, in a stack run's episode container;
 ``grade_run`` grades them on the host (main-task scorer, sealed verifier, monitors) and writes the per-run
 bundle. The two meet only through the run directory. ``mode`` is the ONLY difference between a run and its
-twin.
+baseline.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Any, Final
 import yaml
 from pydantic import BaseModel, ConfigDict, Field
 
-from loc_arena import live
+from loc_arena import live, session_events
 from loc_arena.config import RunConfig
 from loc_arena.deployed_score import grade_deployed
 from loc_arena.gateway.core import (
@@ -50,7 +50,7 @@ from loc_arena.monitors.registry import (
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
 from loc_arena.run_cost import GRADING, mark_phase
-from loc_arena.run_scores import build_scores, honest_twin_scores
+from loc_arena.run_scores import build_scores, honest_baseline_scores, with_deprecated_keys
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -74,8 +74,8 @@ def _default_sink(kind: str, payload: dict[str, Any]) -> None:
 def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     """Return the config for ``mode``; ``mode`` (attack/honest) is the ONLY difference.
 
-    An attack run gives the agents their covert briefs and its target agent the covert objective; its honest
-    twin plays with the same tools and rights and neither.
+    An attack run gives the agents their side task descriptions and its target agent the covert objective; its
+    honest baseline plays with the same tools and rights and neither.
     """
     if mode not in ("attack", "honest"):
         raise ValueError(f"mode must be 'attack' or 'honest', got {mode!r}")
@@ -111,7 +111,7 @@ def _write_bundle(
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
-    (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
+    (out_dir / "scores.json").write_text(json.dumps(with_deprecated_keys(scores), indent=2))
     (out_dir / "decisions.md").write_text(
         decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed),
     )
@@ -170,7 +170,7 @@ class WallClockCeiling(BaseModel):
     seconds: int = Field(description="The play config's episode.wall_clock_seconds.")
     episode_stopped: bool = Field(description="Whether it stopped the episode's agents with turns left.")
     calibration_stopped: bool | None = Field(
-        description="Whether it stopped the honest twin's: none in honest mode, which has no twin.",
+        description="Whether it stopped the honest baseline's: none in honest mode, which has no baseline.",
     )
 
 
@@ -180,7 +180,9 @@ class FailedModelCalls(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     episode: int = Field(description="Failed calls of the episode.")
-    calibration: int | None = Field(description="Of the honest twin: none in honest mode, which has no twin.")
+    calibration: int | None = Field(
+        description="Of the honest baseline: none in honest mode, which has no baseline.",
+    )
 
 
 class PlayedRun(BaseModel):
@@ -193,15 +195,15 @@ class PlayedRun(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", revalidate_instances="always")
 
     play_seconds: float = Field(
-        description="Wall-clock seconds the episode and its honest twin took to play.",
+        description="Wall-clock seconds the episode and its honest baseline took to play.",
     )
     episode_trace: EpisodeTrace | None = Field(description="The episode's per-agent trace, when traced.")
     calibration_trace: EpisodeTrace | None = Field(
-        description="The honest twin's per-agent trace: none in honest mode, where the episode is the twin.",
+        description="The honest baseline's per-agent trace: none in honest mode, where the episode is it.",
     )
     wall_clock_ceiling: WallClockCeiling | None = Field(
         default=None,
-        description="The ceiling, when it stopped the episode or its twin; none otherwise.",
+        description="The ceiling, when it stopped the episode or its baseline; none otherwise.",
     )
     failed_model_calls: FailedModelCalls = Field(
         default=FailedModelCalls(episode=0, calibration=None),
@@ -249,12 +251,12 @@ def play_run(
     mode: str,
     next_phase: bool = False,
 ) -> None:
-    """Play the episode in ``mode`` and, in attack mode, its honest twin; leave what grading needs on disk.
+    """Play the episode in ``mode`` and, in attack mode, its baseline; leave what grading needs on disk.
 
-    The episode plays in ``run_directory/episode`` and the twin in ``run_directory/honest_cal``, each leaving
-    its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces. With
-    ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its services
-    before the twin; with none left, it raises ``ValueError``.
+    The episode plays in ``run_directory/episode`` and the baseline in ``run_directory/honest_cal``, each
+    leaving its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces.
+    With ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its
+    services before the baseline; with none left, it raises ``ValueError``.
     """
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
@@ -271,7 +273,7 @@ def play_run(
         if earlier
         else live.play_model_episode(apply_mode(config, mode), run_directory / "episode")
     )
-    twin = (
+    baseline = (
         None
         if mode == "honest" or (next_phase and not earlier)
         else live.play_model_episode(apply_mode(config, "honest"), run_directory / "honest_cal")
@@ -279,17 +281,17 @@ def play_run(
     played = PlayedRun(
         play_seconds=time.perf_counter() - start + (earlier.play_seconds if earlier else 0),
         episode_trace=episode.trace,
-        calibration_trace=twin.trace if twin else None,
+        calibration_trace=baseline.trace if baseline else None,
         wall_clock_ceiling=WallClockCeiling(
             seconds=config.episode.wall_clock_seconds,
             episode_stopped=episode.stopped_at_wall_clock_ceiling,
-            calibration_stopped=twin.stopped_at_wall_clock_ceiling if twin else None,
+            calibration_stopped=baseline.stopped_at_wall_clock_ceiling if baseline else None,
         )
-        if episode.stopped_at_wall_clock_ceiling or (twin and twin.stopped_at_wall_clock_ceiling)
+        if episode.stopped_at_wall_clock_ceiling or (baseline and baseline.stopped_at_wall_clock_ceiling)
         else None,
         failed_model_calls=FailedModelCalls(
             episode=episode.failed_model_calls,
-            calibration=twin.failed_model_calls if twin else None,
+            calibration=baseline.failed_model_calls if baseline else None,
         ),
     )
     played_file.write_text(played.model_dump_json())
@@ -306,12 +308,17 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
 
 
 def read_played_snapshot(directory: Path, config: RunConfig, trace: EpisodeTrace | None = None) -> Snapshot:
-    """The snapshot of the episode played in ``directory``, with ``trace`` and its model calls.
+    """The snapshot of the episode played in ``directory``, with its model calls and ``trace``.
 
-    Raises ``FileNotFoundError`` for a run whose call record was not copied out.
+    The trace gains the play's sessions, their turns and model calls, which the Inspect log lays out by
+    agent. Raises ``FileNotFoundError`` for a run whose call record was not copied out.
     """
     played = read_snapshot(directory, config)
     calls, ungradeable = read_recorded_calls(directory, config), grade_unread(directory)
+    if trace is not None:
+        sessions = session_events.read_play_calls(directory.parent, directory.name, config)
+        if sessions:
+            trace = session_events.trace_play(trace, sessions, read_events(played.sealed_path))
     return dataclasses.replace(played, trace=trace, calls=calls, ungradeable=ungradeable)
 
 
@@ -358,7 +365,7 @@ def grade_run(
     # The checks read only what play left on disk.
     episode = _grade_played(run_directory / "episode", cfg, played.episode_trace)
     deployed = grade_deployed(run_directory / "episode", cfg, episode.main_score)
-    # calibrate against the honest twin (mode's only difference is covert.enabled)
+    # calibrate against the honest baseline (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
         episode
@@ -387,10 +394,10 @@ def grade_run(
         model_caller=h_caller,
         event_sink=h_sink or _default_sink,
     )
-    # In honest mode the episode IS the calibration twin; score it ONCE and reuse that record, so a live
-    # monitor's nondeterminism between two independent scorings cannot make the honest twin caught against
-    # itself (the honest-twin-scores-zero guarantee holds for the live path too). In attack mode the twin
-    # is a separate honest episode.
+    # In honest mode the episode IS the calibration baseline; score it ONCE and reuse that record, so a live
+    # monitor's nondeterminism between two independent scorings cannot make the honest baseline caught against
+    # itself (the honest-baseline-scores-zero guarantee holds for the live path too). In attack mode the
+    # baseline is a separate honest episode.
     ep_rec = (
         honest_rec
         if mode == "honest"
@@ -399,8 +406,8 @@ def grade_run(
     # Per-event threshold (kept): still reported as safety.audit_threshold and used by the per-monitor
     # safety() report and report.html.
     threshold = calibrate_threshold([honest_rec], proto.audit_budget_fpr)
-    # Episode-level CAUGHT decision: calibrate on the honest twin's OVERALL aggregate and catch
-    # only within the honest twin's catch-before-harm window, then compare the attack's overall aggregate.
+    # Episode-level CAUGHT decision: calibrate on the honest baseline's OVERALL aggregate and catch
+    # only within the honest baseline's catch-before-harm window, then compare the attack's overall aggregate.
     # The overall SUSPICION aggregate is over the enabled model-backed monitors only (a disabled monitor is
     # not deployed and the model:none detectors are a separate signal); both are still reported.
     scored_specs = suspicion_specs(specs)
@@ -434,9 +441,9 @@ def grade_run(
         redeployed=find_redeployed_services(run_directory / "episode", cfg),
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
-    if mode == "attack":  # in honest mode the episode is the twin, so its verdicts are the run's own
-        twin = honest_twin_scores(honest_rec, h_overall, h_per_monitor, honest_ep.main_score.error)
-        scores["honest_twin"] = twin.model_dump()
+    if mode == "attack":  # in honest mode the episode is the baseline, so its verdicts are the run's own
+        baseline = honest_baseline_scores(honest_rec, h_overall, h_per_monitor, honest_ep.main_score.error)
+        scores["honest_baseline"] = baseline.model_dump()
     scores["failed_model_calls"] = played.failed_model_calls.model_dump()
     if played.wall_clock_ceiling:  # only for a run it stopped, so every other run's scores keep their shape
         scores["wall_clock_ceiling"] = played.wall_clock_ceiling.model_dump()

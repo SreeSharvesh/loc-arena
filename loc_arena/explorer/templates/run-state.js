@@ -1,9 +1,9 @@
   const DATA = JSON.parse(document.getElementById('data').textContent);
   const RUN = DATA.run, OUT = DATA.outcome, STEPS = DATA.steps, VERDICTS = DATA.verdicts, MONITORS = DATA.monitors, LANES = DATA.lanes;
-  const IS_TWIN = RUN.play === 'honest_cal';  // the honest twin's page: it is not scored on its own
-  const CAL = DATA.calibration;  // the run against its honest twin, when grading kept the twin's scores
-  document.body.classList.toggle('twin', IS_TWIN);
-  const THR = RUN.audit_threshold;  // the honest twin's page has no outcome of its own, but the same threshold
+  const IS_BASELINE = RUN.play === 'honest_cal';  // the honest baseline's page: it is not scored on its own
+  const CAL = DATA.calibration;  // the run against its honest baseline, when grading kept the baseline's scores
+  document.body.classList.toggle('baseline', IS_BASELINE);
+  const THR = RUN.audit_threshold;  // the honest baseline's page has no outcome of its own, but the same threshold
   const WORLD = 'World';
   const byId = new Map(STEPS.map(s => [s.id, s]));
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -82,14 +82,14 @@
   const flagged = s => s.peak != null && s.peak > THR;
   const levelOf = score => score == null ? 'none' : score > THR ? 'flag' : 'clean';
   const scoreText = v => v == null ? '·' : String(Math.round(v * 100) / 100);
-  // A score equal to the threshold is not a flag, but not clear either; on the twin's page it is one that set it.
-  const AT_TITLE = IS_TWIN ? 'at the audit threshold: one of the scores that set it' : 'equal to the audit threshold, so not above it';
+  // A score equal to the threshold is not a flag, but not clear either; on the baseline's page it is one that set it.
+  const AT_TITLE = IS_BASELINE ? 'at the audit threshold: one of the scores that set it' : 'equal to the audit threshold, so not above it';
   const pill = score => `<span class="pill ${levelOf(score)}${score === THR ? ` at" title="${AT_TITLE}` : ''}">${scoreText(score)}</span>`;
   const covertTags = tags => [...new Set(tags || [])].map(t => `<span class="tag covert">${esc(t)}</span>`).join('');
   const oneLine = t => String(t || '').replace(/\s+/g, ' ').trim();
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
   const laneIndex = name => { const i = LANES.indexOf(name); return i < 0 ? LANES.length : i; };
-  // The twin's page has no monitor rows (they describe the run's play), so its columns come from its own verdicts.
+  // The baseline's page has no monitor rows (they describe the run's play), so its columns come from its own verdicts.
   const MONITOR_ORDER = MONITORS.length ? MONITORS.map(m => m.name) : [...new Set(VERDICTS.map(v => v.monitor))].sort();
   const SCORED_MONITORS = MONITOR_ORDER.filter(name => VERDICTS.some(v => v.monitor === name));
   const replyText = s => s.calls.map(c => `${c.reasoning || ''}\n${c.reply}`).join('\n');
@@ -322,10 +322,10 @@
     { id: 'transcript', label: 'Transcript', icon: 'grid' },
     { id: 'comms', label: 'Communication', icon: 'talk' },
     { id: 'steps', label: 'Search steps', icon: 'list' },
-    { id: 'monitors', label: IS_TWIN ? 'Monitors on the twin' : 'Outcome and monitors', icon: 'shield' },
+    { id: 'monitors', label: IS_BASELINE ? 'Monitors on the baseline' : 'Outcome and monitors', icon: 'shield' },
     { id: 'notes', label: 'Your notes', icon: 'pencil', dialog: true },
     { id: 'method', label: 'How this was read', icon: 'help' },
-  ].filter(v => DATA.outcome || CAL || v.id !== 'monitors');  // a twin page without its saved scores has none to show
+  ].filter(v => DATA.outcome || CAL || v.id !== 'monitors');  // a baseline page without its saved scores has none to show
   function buildRail() {
     els.rail = el('railnav');
     // A page built from a folder of runs links back to the index of them all.
@@ -447,15 +447,15 @@
     return high.map(v => verdictCard(v, true)).join('') + (low.length ? `<div class="tmore">${low.length}${high.length ? ' more' : ''} at or below ${THR}${at ? `, ${at} at it` : max ? `, highest ${scoreText(max)}` : ''}</div>` : '');
   }
   function renderTbar() {
-    const { main_task: mt, side_task: st, safety: sf, milestones = [] } = OUT || {};
+    const { main_task: mt, side_task: st, safety: sf, stages = [] } = OUT || {};
     el('t-outcome').innerHTML = (!OUT ? [
-      `<span><b>honest twin</b>: played to set the audit threshold (<b>${esc(THR)}</b>)${CAL ? '' : '; grading did not save its verdicts'}</span>`,
+      `<span><b>honest baseline</b>: played to set the audit threshold (<b>${esc(THR)}</b>)${CAL ? '' : '; grading did not save its verdicts'}</span>`,
       ...(CAL ? [`<span><b class="flag">${plural(STEPS.filter(flagged).length, 'step')}</b> above it, each a false alarm; <b>${plural(VERDICTS.filter(v => v.score === THR).length, 'verdict')}</b> at it</span>`] : []),
-      ...(CAL ? [`<span>overall suspicion <b>${scoreText(CAL.twin_overall)}</b>, the bar the run&rsquo;s <b>${scoreText(CAL.run_overall)}</b> was held to</span>`, `<button class="linkish" data-to-view="monitors">monitors on the twin &rarr;</button>`] : []),
+      ...(CAL ? [`<span>overall suspicion <b>${scoreText(CAL.baseline_overall)}</b>, the bar the run&rsquo;s <b>${scoreText(CAL.run_overall)}</b> was held to</span>`, `<button class="linkish" data-to-view="monitors">monitors on the baseline &rarr;</button>`] : []),
       `<span><b>${STEPS.length}</b> steps</span>`,
     ] : [
       `<span title="${esc(mt.red_suites.join('\n'))}">main task <b>${esc(mt.final_score)}</b>${mt.gate_passed ? '' : ` (${esc(mt.gate_reason || '?')})`}</span>`,
-      `<span>side task <b class="covert">${st.landing_minimal ? 'landed, minimal' : 'not landed'}</b> (${milestones.filter(m => m.reached).length} of ${milestones.length} milestones)</span>`,
+      `<span>side task <b class="covert">${st.success ? 'succeeded, minimal' : 'did not succeed'}</b> (${stages.filter(m => m.reached).length} of ${stages.length} stages)</span>`,
       `<span><b class="${sf.caught ? 'flag' : ''}">${sf.caught ? 'caught' : 'not caught'}</b>${sf.caught ? ` by ${esc(sf.caught_by.join(', '))}` : ''}</span>`,
       `<span>audit threshold <b>${esc(THR)}</b></span>`, `<span><b class="flag">${STEPS.filter(flagged).length}</b> steps flagged, <b class="covert">${STEPS.filter(s => s.covert.length).length}</b> covert</span>`,
       `<button class="linkish" data-to-view="monitors">outcome and monitors &rarr;</button>`,

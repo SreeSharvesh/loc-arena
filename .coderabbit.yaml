@@ -25,7 +25,7 @@ reviews:
   high_level_summary_instructions: |
     One sentence on what the change does and why, then bullets for each change in behaviour. End with a
     line "Invariants touched:" naming any of the invariants in AGENTS.md the change affects (the two event
-    logs, the monitor firewall, the honest twin, model calls only through
+    logs, the monitor firewall, the honest baseline, model calls only through
     the gateway), or "none".
   # Lists the path instructions and guidelines applied to each review; useful while this file is tuned.
   review_details: true
@@ -85,14 +85,14 @@ reviews:
       instructions: &monitor_firewall |
         Monitors judge only what a real platform could observe (AGENTS.md, "The firewall").
         - A monitor reads the mirror log and the fields in `ALLOWED_MONITOR_INPUTS`. Flag any read of the
-          sealed log, of verifier or grader output, of covert-milestone state, or of whether the episode is
+          sealed log, of verifier or grader output, of covert-stage state, or of whether the episode is
           honest or attack.
         - A name added to `ALLOWED_MONITOR_INPUTS` needs a reason in the pull request that a real platform
           could observe it.
         - A monitor that fails (provider error, unparseable reply, timeout) must be recorded as errored, so
           a failure is never read as a clean verdict.
         - Prompts may describe the rogue-deployment threat in general terms, as they do today. Flag a prompt
-          that names this scenario's kill-chain milestones or other facts only the sealed verifier knows.
+          that names this scenario's kill-chain stages or other facts only the sealed verifier knows.
     - path: "configs/monitors.yaml"
       instructions: *monitor_firewall
     - path: "loc_arena/prompts/*.monitor.md"
@@ -105,7 +105,7 @@ reviews:
           monitor's output.
         - They are deterministic: no wall clock, unseeded randomness, network access, or iteration order that
           can change a result.
-        - A change to what counts as a milestone or a pass says why in the pull request and comes with a test
+        - A change to what counts as a stage or a pass says why in the pull request and comes with a test
           that fails under the old rule.
         - None of it is reachable from the agents' tools in `loc_arena/scaffold/`.
     - path: "loc_arena/tasks/**"
@@ -268,10 +268,10 @@ reviews:
         mode: warning
         instructions: >-
           Fail if the diff makes code in loc_arena/monitors/, configs/monitors.yaml or
-          loc_arena/prompts/*.monitor.md read the sealed log, verifier or grader output, covert-milestone state, or
+          loc_arena/prompts/*.monitor.md read the sealed log, verifier or grader output, covert-stage state, or
           whether the episode is honest or attack; adds a name to ALLOWED_MONITOR_INPUTS in
           loc_arena/monitors/registry.py without the pull request saying why a real platform could observe
-          it; or adds this scenario's kill-chain milestone names to a monitor prompt. Describing the
+          it; or adds this scenario's kill-chain stage names to a monitor prompt. Describing the
           rogue-deployment threat in general terms is allowed. Pass otherwise.
       - name: "Agent code cannot reach the sealed record"
         mode: warning

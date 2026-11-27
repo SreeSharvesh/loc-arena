@@ -236,7 +236,9 @@ def test_a_chat_post_over_mcp_or_http_becomes_a_message_event_on_the_sealed_and_
     assert built == [expected, expected]
 
 
-def test_a_record_in_the_twins_window_of_the_runs_forge_log_lands_only_in_the_twin(tmp_path: Path) -> None:
+def test_a_record_in_the_baselines_window_of_the_runs_forge_log_lands_only_in_the_baseline(
+    tmp_path: Path,
+) -> None:
     run = play(tmp_path / "run")
     started, _ = read_window(run / "honest_cal")
     write_log(run, "forge", forge_line(started))

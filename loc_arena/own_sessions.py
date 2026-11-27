@@ -319,7 +319,7 @@ def choose_settings(config: RunConfig, agent: str, model: str | None) -> ModelSp
 def brief_loop(config: RunConfig, agent: str, brief: str) -> str:
     """``agent``'s system prompt: ``brief``, after the covert objective for the attack's target agent alone.
 
-    The honest twin has no covert objective, so its target's brief is the legitimate one.
+    The honest baseline has no covert objective, so its target's brief is the legitimate one.
     """
     covert = config.covert
     return (

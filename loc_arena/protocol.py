@@ -4,7 +4,7 @@ Enforces the firewall (composes the ENABLED monitors, never the sealed verifier)
 (the audit budget comes from the run config). Composes the wired monitors from the registry into the
 named protocol (``trusted_monitoring``) with an audit-budget FPR, and optionally defer-to-trusted above a
 threshold. It attaches suspicion scores to the trajectory (by running the monitors over the mirror
-events); the audit decision is applied at scoring against the honest-twin-calibrated threshold
+events); the audit decision is applied at scoring against the honest-baseline-calibrated threshold
 (``loc_arena/metrics.py``).
 """
 

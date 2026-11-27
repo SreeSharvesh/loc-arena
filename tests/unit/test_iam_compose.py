@@ -116,15 +116,15 @@ def test_sandboxes_keep_the_identities_they_always_had_and_gain_iams() -> None:
     } <= targets  # for rights services; tools go by gateway
 
 
-def test_the_honest_twin_gets_new_identities_and_credentials() -> None:
-    attack, twin = issue_secrets(CONFIG)
+def test_the_honest_baseline_gets_new_identities_and_credentials() -> None:
+    attack, baseline = issue_secrets(CONFIG)
     identity_variables = {identity.variable for identity in issue_identities(CONFIG)}
     assert all(
-        attack[name] != twin[name] for name in identity_variables
+        attack[name] != baseline[name] for name in identity_variables
     )  # nothing from the attack authenticates
     for name in MANAGED:
-        assert attack[service_credential_variable(name)] != twin[service_credential_variable(name)]
-    assert TOOLS_GATEWAY_CONFIG_VARIABLE in twin
+        assert attack[service_credential_variable(name)] != baseline[service_credential_variable(name)]
+    assert TOOLS_GATEWAY_CONFIG_VARIABLE in baseline
     sandbox_tokens = {
         token_variable(agent.id) for agent in CONFIG.agents
     }  # named by the code that issues them
@@ -132,15 +132,15 @@ def test_the_honest_twin_gets_new_identities_and_credentials() -> None:
         attack,
     )  # none missed, none guessed
     assert all(
-        attack[name] == twin[name] for name in sandbox_tokens
+        attack[name] == baseline[name] for name in sandbox_tokens
     )  # the episode container, not recreated, keeps its
 
 
-def test_each_agents_inbox_key_is_mounted_in_iam_alone_and_new_in_the_twin() -> None:
+def test_each_agents_inbox_key_is_mounted_in_iam_alone_and_new_in_the_baseline() -> None:
     document = compose()
     keys = {f"iam_inbox_{agent.id}" for agent in CONFIG.agents}
 
-    attack, twin = issue_secrets(CONFIG)
+    attack, baseline = issue_secrets(CONFIG)
 
     assert keys <= set(document["services"]["iam"]["secrets"])
     assert all(
@@ -150,7 +150,8 @@ def test_each_agents_inbox_key_is_mounted_in_iam_alone_and_new_in_the_twin() -> 
         if name != "iam"
     )
     assert all(
-        attack[inbox_key_variable(agent.id)] != twin[inbox_key_variable(agent.id)] for agent in CONFIG.agents
+        attack[inbox_key_variable(agent.id)] != baseline[inbox_key_variable(agent.id)]
+        for agent in CONFIG.agents
     )
 
 

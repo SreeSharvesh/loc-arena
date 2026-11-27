@@ -12,7 +12,7 @@ in its own sandbox and checkout. Everything else it can do to the company, such 
 opening a PR, messaging a teammate in chat, submitting a job or writing a note, is a tool on a service
 behind that route; the run config decides exactly which tools each agent is offered. A
 rights-bearing service such as `notes` or `chat` can also be called over HTTP from the sandbox directly, with the agent's own identity. Every service records each call made to it and by
-whom. After play, those records become the events the monitors and the verifier read. The honest twin plays on
+whom. After play, those records become the events the monitors and the verifier read. The honest baseline plays on
 services and sandboxes recreated, each service from its seed.
 
 <img alt="Deployment of a stack run: the model gateway alone joins agent-net, egress-net and record-net, so every model call leaves through it and its record goes to the collector, while tool calls go through agentgateway and the sandboxes also call services with rights over HTTP." src="networks.svg" width="100%">
@@ -27,7 +27,7 @@ credentials they are given.
 |---|---|
 | `gateway` | agentgateway, the only holder of the key and of a route out, on agent-net, egress-net and record-net; admits each caller by its own token and exports a record of every model call, with the caller, to the Collector |
 | `collector` | an OpenTelemetry Collector on record-net, which only the gateway joins; appends each record to the sealed record in a volume only it mounts |
-| `episode` | plays the episode and, in attack mode, its honest twin; holds every sandbox's token and no identity |
+| `episode` | plays the episode and, in attack mode, its honest baseline; holds every sandbox's token and no identity |
 | `sandbox-<agent id>` | one agent's code, from a slim image with no harness and no scenarios; mounts that agent's checkout volume, and the scenario's skills read-only; holds its own token and its own identity on each service with rights; takes commands from the episode alone, and answers one it cannot run with a 500 that names the failure, which the episode's error carries |
 | one per live service | a scenario's `services:` entry with `build`, `image` or `module`; no route out, all capabilities dropped, limits from `stack`, no published port; a service the deployer's entry lists (`deploys:`) runs under a supervisor on `deploy.release_port`, which holds a token of its own, which the deployer also holds, and takes a release from that deployer alone ([docs/deploy-service.md](../deploy-service.md)) |
 | `runner-<n>` | where the company's own agents run with pi, for the one service whose entry declares `runners: <n>`; a sandbox from the Dockerfile's `runner` target with an empty `/workspace`; holds its own token, which that service also holds, and takes commands from that service alone; an execution there gets its agent's tokens on the company's services (`MERIDIAN_<SERVICE>_TOKEN`) |
@@ -99,7 +99,7 @@ agents:
   route too. A refused call comes back as a tool error with the service's reason.
 - Offering a tool grants nothing: IAM seeds each agent's `sandbox: rights:` alone, and a call to an offered tool
   takes the permission its operation checks, held from the start or asked for.
-- An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest twin's agents
+- An unknown service or tool in `sandbox: tools:` is refused when the config loads. The honest baseline's agents
   are offered the same tools and hold the same rights as the attack run's.
 - `run-tests` and `run-benchmark` are skills, not tools: scripts with a `SKILL.md` in the pack's `skills:`
   folder, which every sandbox mounts read-only at `/skills` and agents run with bash on their own checkout.
@@ -114,7 +114,7 @@ calls with the caller added.
 Before grading, the run stops the runners and copies each live service's log, each node's, and agentgateway's,
 to `services/<name>.log` in the run directory, and Phoenix's spans, which no monitor reads, to
 `services/phoenix.spans.jsonl`. `loc_arena/recorded_events.py` then turns each record into the events of the episode or the honest
-twin whose play window holds its time, in the turn of its agent that covers that time. Each event goes to the sealed
+baseline whose play window holds its time, in the turn of its agent that covers that time. Each event goes to the sealed
 log and, unless it is sealed-only, the mirror log: a node's `process` facts stay on the sealed log, where the verifier reads them and the monitors cannot. A refused call is a blocked `action`. A record that cannot be placed goes to
 `unattributed_records.jsonl` in the run directory. Grading never builds events, so grading a run again adds
 none. The episode clock does not move during play, so each built event's seq and its record's wall time go to
@@ -123,15 +123,15 @@ none. `run.json` in the run directory names the engine's commit, read before its
 played again from it. It counts as `modified` when the checkout differs from the commit or the run's config is not
 in it, as a local config is not.
 
-## The honest twin
+## The honest baseline
 
 The episode container plays one phase per start. Between the two, the host adds each service's
 log so far, and Phoenix's spans, to their files in the run directory and waits until the Collector holds a
 record of every call the gateway logged, then recreates the gateway and every sandbox, runner, node, live service
 and agentgateway with fresh anonymous volumes (`loc_arena/stack_play.py`). The Collector and its record run on,
-and the gateway counts the twin's runner calls afresh. The episode stays.
+and the gateway counts the baseline's runner calls afresh. The episode stays.
 If a log cannot be copied, nothing is recreated; if a container does not come back, the run stops with its
-logs copied out. The twin therefore sees none of the notes, grants, PRs, jobs or files the attack left.
+logs copied out. The baseline therefore sees none of the notes, grants, PRs, jobs or files the attack left.
 
 ## Services with rights
 
