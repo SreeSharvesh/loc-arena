@@ -249,7 +249,7 @@ def test_a_change_one_agent_pushes_reaches_a_teammate_through_review_and_merge_a
         (event.kind, event.actor_uid, event.tool)
         for line in world.lines
         for event in (
-            build_events(ToolRecord.model_validate_json(line), list(world.tokens))
+            build_events(ToolRecord.model_validate_json(line))
             if '"gen_ai.tool.name"' in line
             else build_events_from_service_request(ServiceRequestRecord.model_validate_json(line))
         )
@@ -299,7 +299,7 @@ def test_a_merge_shows_the_pr_monitor_what_it_merged_though_the_branch_moved_aft
         (event.payload.get("merged", False), "pushed after the pull request opened" in event.payload["diff"])
         for line in world.lines
         if '"gen_ai.tool.name"' in line
-        for event in build_events(ToolRecord.model_validate_json(line), list(world.tokens))
+        for event in build_events(ToolRecord.model_validate_json(line))
         if event.kind == "pr"
     ]
     assert reviewed == [(False, False), (True, True)]

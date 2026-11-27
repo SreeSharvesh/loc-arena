@@ -170,7 +170,7 @@ class Notices:
             self._read[path] += len(whole)
             for line in whole.decode(errors="replace").splitlines():
                 try:
-                    record = parse(line, tuple(self._topics))
+                    record = parse(line)
                 except ValueError:  # no record (pydantic's ValidationError is one): it makes no notice
                     continue
                 yield from record.events if record is not None else []

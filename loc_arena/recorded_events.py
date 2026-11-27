@@ -102,14 +102,13 @@ class RecordedEvent:
     actor_role: str | None = None  # its actor's role on this event, when not its role in the run
 
 
-def build_pull_request(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
+def build_pull_request(record: ToolRecord) -> list[RecordedEvent]:
     """The ``pr`` event of a pull request the forge opened or merged, with the fields the PR monitor reads.
 
     A merge's is its merger's, with the diff it merged: a branch may move after its pull request opens, so
     what merges is reviewed as it merged. A refused merge makes none. Raises ``ValidationError`` when the
     record's result is not the forge's ``open_pr`` or ``merge`` result.
     """
-    _ = agent_ids
     if record.tool == "merge":
         merged = _MERGE_RESULT.validate_python(record.result)
         if not merged["merged"]:
@@ -155,9 +154,8 @@ def chat_message(
     return RecordedEvent("message", author, target, payload)
 
 
-def build_message(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
+def build_message(record: ToolRecord) -> list[RecordedEvent]:
     """The ``message`` event of a chat post an agent made over MCP."""
-    _ = agent_ids
     return [chat_message(record.agent, record.tool, record.arguments, record.result)]
 
 
@@ -166,7 +164,7 @@ CHAT_POSTS: frozenset[str] = frozenset({"post", "reply", "send_dm"})
 
 # What each tool's successful call makes beyond its action event, by tool name (unique across services under
 # the tools gateway's prefixMode: never). A builder raises ValidationError on a result that is not its tool's.
-EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord, Sequence[str]], list[RecordedEvent]]] = {
+EVENT_BUILDERS: Mapping[str, Callable[[ToolRecord], list[RecordedEvent]]] = {
     "open_pr": build_pull_request,
     "merge": build_pull_request,
     **dict.fromkeys(CHAT_POSTS, build_message),
@@ -256,7 +254,7 @@ def build_events_from_service_request(record: ServiceRequestRecord) -> list[Reco
     return [RecordedEvent("action", record.caller, target, payload, tool=record.operation)]
 
 
-def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedEvent]:
+def build_events(record: ToolRecord) -> list[RecordedEvent]:
     """Every event ``record`` makes: a refused call's blocked action, else its tool's events and action.
 
     Of the lines a call's work wrote, the one as it was accepted makes the action, the one as it ended a
@@ -270,7 +268,7 @@ def build_events(record: ToolRecord, agent_ids: Sequence[str]) -> list[RecordedE
     if record.started:
         return []
     builder = EVENT_BUILDERS.get(record.tool)
-    events = builder(record, agent_ids) if builder is not None else []
+    events = builder(record) if builder is not None else []
     return [*events, _action_event(record)] if record.tool in _ACTIONS else events
 
 
@@ -309,20 +307,19 @@ class _ParsedRecordLine:
     asynchronous: bool = False  # made by no agent's call (a job's process ending): outside a turn is expected
 
 
-RecordLineParser = Callable[[str, Sequence[str]], _ParsedRecordLine | None]
+RecordLineParser = Callable[[str], _ParsedRecordLine | None]
 
 
-def _parse_tool_call_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
+def _parse_tool_call_line(line: str) -> _ParsedRecordLine:
     """A tool call's record; raises ``ValidationError`` for a line that is none."""
     record = ToolRecord.model_validate_json(line)
-    return _ParsedRecordLine(record.time.timestamp(), record.agent, build_events(record, agent_ids))
+    return _ParsedRecordLine(record.time.timestamp(), record.agent, build_events(record))
 
 
 def _enforced_call_parser(refusals: Mapping[str, str], services: Sequence[str]) -> RecordLineParser:
     """A call of a tool the gateway enforces IAM for, from the gateway's line: an ``action``, a read too."""
 
-    def parse(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
-        _ = agent_ids
+    def parse(line: str) -> _ParsedRecordLine | None:
         record = read_enforced_call(line, refusals, services)
         if record is None:
             return None
@@ -331,18 +328,17 @@ def _enforced_call_parser(refusals: Mapping[str, str], services: Sequence[str]) 
     return parse
 
 
-def _parse_workspace_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine:
+def _parse_workspace_line(line: str) -> _ParsedRecordLine:
     """A call of the workspace service's: an agent's bash or file tool, each an ``action``."""
-    _ = agent_ids
     record = ToolRecord.model_validate_json(line)
     return _ParsedRecordLine(record.time.timestamp(), record.agent, [_action_event(record)])
 
 
-def _parse_tool_call_or_request_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+def _parse_tool_call_or_request_line(line: str) -> _ParsedRecordLine | None:
     """A service's line, tools and rights both: a tool call's record if it names a tool, else a request's."""
     if "gen_ai.tool.name" in _JSON_OBJECT.validate_json(line):
-        return _parse_tool_call_line(line, agent_ids)
-    return _parse_service_request_line(line, agent_ids)
+        return _parse_tool_call_line(line)
+    return _parse_service_request_line(line)
 
 
 _IAM_MUTATIONS = frozenset(
@@ -372,8 +368,7 @@ def _iam_line_parser(recorded_by_service: frozenset[str], approvers: frozenset[s
     agent's action, and expected: it is neither placed nor reported unplaced.
     """
 
-    def parse(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
-        _ = agent_ids
+    def parse(line: str) -> _ParsedRecordLine | None:
         event = _JSON_OBJECT.validate_json(line)
         kind, blocked = event.get("kind"), False
         if kind == "rejected":
@@ -406,7 +401,7 @@ def _iam_line_parser(recorded_by_service: frozenset[str], approvers: frozenset[s
     return parse
 
 
-def _parse_job_service_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+def _parse_job_service_line(line: str) -> _ParsedRecordLine | None:
     """A line of the job service: a job's change of state, a tool call, or an HTTP request.
 
     A change of state is a ``job`` event of the job's owner on both logs. A call that changes something
@@ -434,12 +429,11 @@ def _parse_job_service_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecor
         call = ToolRecord.model_validate_json(line)
         changed = call.error is not None or call.tool not in _JOB_READS
         return _ParsedRecordLine(call.time.timestamp(), call.agent, [_action_event(call)] if changed else [])
-    return _parse_service_request_line(line, agent_ids)
+    return _parse_service_request_line(line)
 
 
-def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+def _parse_process_line(line: str) -> _ParsedRecordLine | None:
     """A job's process fact: a ``process`` event of its owner on the sealed log alone; none for a boot."""
-    _ = agent_ids
     record = ProcessRecord.model_validate_json(line)
     fact = record.process
     if fact.owner is None:
@@ -449,9 +443,8 @@ def _parse_process_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLin
     return _ParsedRecordLine(record.time.timestamp(), fact.owner, [event], asynchronous=True)
 
 
-def _parse_service_request_line(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
+def _parse_service_request_line(line: str) -> _ParsedRecordLine | None:
     """A request's record, or ``None`` for a line naming no operation; ``ValidationError`` for a bad one."""
-    _ = agent_ids
     if "operation" not in _JSON_OBJECT.validate_json(line):
         return None
     record = ServiceRequestRecord.model_validate_json(line)
@@ -483,7 +476,6 @@ def build_recorded_events(
     did not play is skipped.
     """
     roles = {agent.id: agent.kind for agent in config.agents}
-    agent_ids = tuple(roles)
     # The agents ran their own sessions: their turns are their model calls.
     sessions = {name: session_events.read_play_calls(run_directory, name, config) for name in traces}
     phases = [
@@ -512,7 +504,7 @@ def build_recorded_events(
         unattributed += session_events.describe_local_tools(calls)
     for service, parse_record_line in record_line_parsers:
         for line in _read_record_lines(run_directory, service, phases):
-            placed, reason = _place(line, parse_record_line, phases, roles, agent_ids)
+            placed, reason = _place(line, parse_record_line, phases, roles)
             unattributed += [json.dumps({"reason": reason, "line": line})] if reason else []
             if placed:
                 built[placed.phase.directory].append(placed)
@@ -601,8 +593,8 @@ def _attribute_workloads(parse: RecordLineParser, sponsors: Mapping[str, str]) -
     outside every turn of the sponsor's.
     """
 
-    def parse_attributed(line: str, agent_ids: Sequence[str]) -> _ParsedRecordLine | None:
-        record = parse(line, agent_ids)
+    def parse_attributed(line: str) -> _ParsedRecordLine | None:
+        record = parse(line)
         workload = None if record is None else record.agent
         if record is None or workload is None or workload not in sponsors:
             return record
@@ -633,11 +625,10 @@ def _place(
     parse_record_line: RecordLineParser,
     phases: list[_Phase],
     roles: Mapping[str, str],
-    agent_ids: Sequence[str],
 ) -> tuple[_Placed | None, str | None]:
     """The events of a record ``line``, placed, if it makes any; and why not, or not in a turn."""
     try:
-        record = parse_record_line(line, agent_ids)
+        record = parse_record_line(line)
     except ValidationError:
         return None, "not a valid record"
     if record is None:

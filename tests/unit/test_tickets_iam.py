@@ -168,7 +168,7 @@ def test_each_change_or_refusal_is_an_action_on_its_ticket_and_an_answered_read_
         event
         for record in records
         for event in (
-            build_events(ToolRecord.model_validate(record), AGENTS)
+            build_events(ToolRecord.model_validate(record))
             if "gen_ai.tool.name" in record
             else build_events_from_service_request(ServiceRequestRecord.model_validate(record))
         )
