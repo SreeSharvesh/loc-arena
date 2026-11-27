@@ -30,7 +30,6 @@ from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest, CommandRes
 
 CONTAINER_MARKER = Path("/.dockerenv")  # Docker creates it in every container
 END_AGAIN_SECONDS = 0.1  # how long a reset waits for a command to end before it ends the leftovers again
-SandboxToken = ServerToken  # a sandbox's own token: what its caller presents (kept for importers)
 
 
 class ServerSettings(BaseModel):
@@ -67,7 +66,7 @@ class SandboxSecrets(BaseSettings):
 
     model_config = SettingsConfigDict(frozen=True)
 
-    sandbox_token: SandboxToken = Field(description="The token a caller of this command server presents.")
+    sandbox_token: ServerToken = Field(description="The token a caller of this command server presents.")
 
 
 def end_until_finished(unfinished: set[threading.Event], end_leftovers: Callable[[], None]) -> None:

@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pydantic import TypeAdapter
-from sandbox_server.server import SandboxToken
+from sandbox_server.trusted import ServerToken
 from sandbox_server.wire import CommandRequest
 
 from loc_arena.agents_iam import IamIdentityIssuer
@@ -102,7 +102,7 @@ class RunnerClient:
 def connect_runners(run_config: RunConfig) -> list[RunnerClient]:
     """A client of each runner of the pool, holding that runner's token from the secrets directory."""
     settings = run_config.settings
-    read_token = TypeAdapter(SandboxToken).validate_python
+    read_token = TypeAdapter(ServerToken).validate_python
     return [
         RunnerClient(
             runner,
