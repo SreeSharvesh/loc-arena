@@ -18,9 +18,9 @@ import os
 import sys
 
 from loc_arena.config import load_run_config
-from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
-from loc_arena.mcp_service import caller_from_token, serve
-from loc_arena.tool_records import record_writer, tool_call_recorder
+from loc_arena.iam_wiring import assemble_service_app, guard_from_environment
+from loc_arena.mcp_service import serve
+from loc_arena.tool_records import record_writer
 from meridian_common.records import Database
 from meridian_evalkit.service import (
     EvalkitRegistry,
@@ -36,7 +36,7 @@ def main(arguments: list[str]) -> None:
     config = load_run_config(arguments[0])
     entry = next(service for service in config.live_services if service.name == arguments[1])
     settings, seed = config.settings, load_seed()
-    write_record_line = record_writer(settings.stack.records_directory, entry.name)
+    write = record_writer(settings.stack.records_directory, entry.name)
     if unserved := sorted(set(seed.models) - set(settings.gateway.runner_model_aliases)):
         raise ValueError(
             f"gateway.runner_model_aliases has no {', '.join(unserved)}: every eval run on one would fail",
@@ -48,16 +48,8 @@ def main(arguments: list[str]) -> None:
         resources=JobResources(cpu=settings.evalkit.job_cpu, memory_mb=settings.evalkit.job_memory_mb),
     )
     guard = guard_from_environment(os.environ)  # IAM decides every call: no identity or rights table here
-    api = create_evalkit_api(registry, write_record_line, load_iam_authority(guard))
-    options = iam_options(guard, entry.name)
-    recorder = tool_call_recorder(caller_from_token, write_record_line, options["annotate"])
-    server = build_evalkit_server(
-        registry,
-        caller_from_token,
-        options["verifier"],
-        [recorder, *options["extra_middleware"]],
-    )
-    serve(build_service_app(guard, server, entry.name, api), entry.port)
+    app = assemble_service_app(registry, create_evalkit_api, build_evalkit_server, entry.name, guard, write)
+    serve(app, entry.port)
 
 
 if __name__ == "__main__":

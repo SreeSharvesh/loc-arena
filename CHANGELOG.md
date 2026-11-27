@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [466] - 2026-11-28: Five services build their app through one helper
+
+### Changed
+
+- The tickets service, notes service, chat service, eval service and model store build their app through one shared helper, where each repeated ten lines.
+
 ## [465] - 2026-11-28: The job service calls node daemons by their declared paths
 
 ### Changed
