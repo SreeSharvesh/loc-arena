@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [435] - 2026-11-27: A monitor re-run reads a run that was never graded
+## [436] - 2026-11-27: A monitor re-run reads a run that was never graded
 
 ### Fixed
 
