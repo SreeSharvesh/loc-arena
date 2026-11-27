@@ -2,10 +2,9 @@
 
 Enforces the firewall (composes the ENABLED monitors, never the sealed verifier) and config over code
 (the audit budget comes from the run config). Composes the wired monitors from the registry into the
-named protocol (``trusted_monitoring``) with an audit-budget FPR, and optionally defer-to-trusted above a
-threshold. It attaches suspicion scores to the trajectory (by running the monitors over the mirror
-events); the audit decision is applied at scoring against the honest-baseline-calibrated threshold
-(``loc_arena/metrics.py``).
+named protocol (``trusted_monitoring``) with an audit-budget FPR. It attaches suspicion scores to the
+trajectory (by running the monitors over the mirror events); the audit decision is applied at scoring
+against the honest-baseline-calibrated threshold (``loc_arena/metrics.py``).
 """
 
 from __future__ import annotations
@@ -28,12 +27,11 @@ from loc_arena.session_slots import name_slots
 
 @dataclass(frozen=True)
 class Protocol:
-    """The composed control protocol: the enabled monitors plus the audit budget and defer policy."""
+    """The composed control protocol: the enabled monitors plus the audit budget."""
 
     name: str
     registry: MonitorRegistry
     audit_budget_fpr: float
-    defer_to_trusted: bool
     async_default_timeout_s: float = 20.0
 
     def run(self, mirror_events: list[Event], context: MonitorContext) -> list[MonitorVerdict]:
@@ -52,18 +50,15 @@ class Protocol:
 
 
 def compose_protocol(config: RunConfig, registry: MonitorRegistry) -> Protocol:
-    """Compose the protocol named in the run config with its audit budget and defer flag.
+    """Compose the protocol named in the run config with its audit budget.
 
-    ``async_default_timeout_s`` defaults to 20.0 and is read from an optional ``protocol`` field if
-    present; it now lives in the aggregation block.
+    Grading sets ``async_default_timeout_s`` from the monitors file's aggregation block.
     """
     proto = config.protocol
     return Protocol(
         name=str(proto.get("name", "trusted_monitoring")),
         registry=registry,
         audit_budget_fpr=float(proto.get("audit_budget_fpr", 0.02)),
-        defer_to_trusted=bool(proto.get("defer_to_trusted", False)),
-        async_default_timeout_s=float(proto.get("async_default_timeout_s", 20.0)),
     )
 
 
