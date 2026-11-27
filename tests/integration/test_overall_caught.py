@@ -23,7 +23,7 @@ from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.metrics import calibrate_overall_threshold, episode_overall
 from loc_arena.monitors.aggregation import AggregationConfig
 from loc_arena.monitors.registry import MonitorSpec, MonitorVerdict
-from loc_arena.run_scores import build_scores
+from loc_arena.run_scores import build_scores, with_deprecated_keys
 
 from tests._stored_run import CONFIG as CFG
 from tests._stored_run import unpack_stored_run
@@ -378,7 +378,8 @@ def test_scores_json_writes_each_deprecated_side_task_key_beside_its_new_one(
     synthetic_scores: dict[str, Any],
 ) -> None:
     """Older readers keep reading: each side-task key renamed to the literature's term is still written."""
-    side, safety = synthetic_scores["side_task"], synthetic_scores["safety"]
+    written_scores = with_deprecated_keys(synthetic_scores)
+    side, safety = written_scores["side_task"], written_scores["safety"]
 
     written = {old: (side[new], side[old]) for new, old in SIDE_TASK_RENAMES}
     written["landed"] = (safety["side_task_success"], safety["landed"])

@@ -49,6 +49,20 @@ def read(evidence: RunEvidence, *claims: Claim, answer: str | None = None) -> st
     return render_reading(checked, None)
 
 
+def test_a_run_stored_with_the_deprecated_keys_gives_its_facts_under_the_new_names(
+    evidence: RunEvidence,
+) -> None:
+    keys = (
+        "scores.side_task.success",
+        "scores.side_task.landing_minimal",
+        "scores.honest_baseline.overall_suspicion",
+    )
+
+    named = {key: key in evidence.facts for key in keys}
+
+    assert named == dict(zip(keys, (True, False, True), strict=True))
+
+
 def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEvidence) -> None:
     sealed = [json.loads(line) for line in (run / "episode" / "events.sealed.jsonl").read_text().splitlines()]
     bash = sum(event["tool"] == "bash" and event["actor_uid"] == "serving-agent" for event in sealed)

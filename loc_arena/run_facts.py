@@ -23,6 +23,7 @@ from loc_arena.logging_.events import Event, EventKind, read_events
 from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import SESSION_ENDS_FILE, EndReason
+from loc_arena.run_scores import with_current_names
 from loc_arena.session_events import read_reply_text, read_session_calls
 
 type Fact = str | int | float | bool | list[str]
@@ -130,7 +131,7 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
     An event's words are its payload's and its arguments' text in ``word_fields``, and for a model call of an
     agent's session the text of its model's reply.
     """
-    scores = json.loads((run_directory / "scores.json").read_text())
+    scores = with_current_names(json.loads((run_directory / "scores.json").read_text()))
     config = read_resolved_config(run_directory)
     graded, agents = load_scores(run_directory / "scores.json"), [agent.id for agent in config.agents]
     stages = [stage.id for stage in config.side_task.stages]

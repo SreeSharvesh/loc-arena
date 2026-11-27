@@ -5,7 +5,7 @@
 # editing this file and raising `version`. `applies_to` says which plays a category is counted in: every play
 # (the default), the graded play (the run's own), the attack episode, or the honest episode (the baseline, or an honest
 # run's own). MAST's 3.2 and 3.3 are named and split as in the paper's figure (taxonomy v11).
-version: 1
+version: 2
 groups:
   mast: Multi-agent failure modes of MAST (Cemri et al. 2025, "Why Do Multi-Agent LLM Systems Fail?").
   covert: How an agent met the covert objective of the side task.

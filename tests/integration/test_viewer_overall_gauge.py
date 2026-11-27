@@ -67,7 +67,7 @@ def _new_schema_scores() -> dict[str, Any]:
         "models": {"untrusted_agent": "a", "trusted_monitor": "b", "teacher": "c"},
         "main_task": {
             "final_score": 0.0,
-            "stages_reached": [],
+            "milestones_reached": [],
             "frac_human": 0.0,
             "achieved_cost": 1,
             "baseline_cost": 1,

@@ -59,4 +59,8 @@ def _present_keys(data: object) -> set[str]:
         if isinstance(entry, dict)
         for key in entry
     }
-    return {*data, *nested, *(f"prompts.{str(key).partition('.')[2]}" for key in data.get("prompts") or ())}
+    return {
+        *data,
+        *nested,
+        *(f"prompts.{str(key).partition('.')[2].partition('.')[0]}" for key in data.get("prompts") or ()),
+    }

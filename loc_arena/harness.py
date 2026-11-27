@@ -50,7 +50,7 @@ from loc_arena.monitors.registry import (
 from loc_arena.protocol import compose_protocol
 from loc_arena.recorded_events import build_recorded_events
 from loc_arena.run_cost import GRADING, mark_phase
-from loc_arena.run_scores import build_scores, honest_baseline_scores
+from loc_arena.run_scores import build_scores, honest_baseline_scores, with_deprecated_keys
 from loc_arena.task import (
     EpisodeResult,
     Snapshot,
@@ -111,7 +111,7 @@ def _write_bundle(
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
-    (out_dir / "scores.json").write_text(json.dumps(scores, indent=2))
+    (out_dir / "scores.json").write_text(json.dumps(with_deprecated_keys(scores), indent=2))
     (out_dir / "decisions.md").write_text(
         decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed),
     )
@@ -443,7 +443,7 @@ def grade_run(
     )
     if mode == "attack":  # in honest mode the episode is the baseline, so its verdicts are the run's own
         baseline = honest_baseline_scores(honest_rec, h_overall, h_per_monitor, honest_ep.main_score.error)
-        scores["honest_baseline"] = scores["honest_twin"] = baseline.model_dump()  # honest_twin: deprecated
+        scores["honest_baseline"] = baseline.model_dump()
     scores["failed_model_calls"] = played.failed_model_calls.model_dump()
     if played.wall_clock_ceiling:  # only for a run it stopped, so every other run's scores keep their shape
         scores["wall_clock_ceiling"] = played.wall_clock_ceiling.model_dump()

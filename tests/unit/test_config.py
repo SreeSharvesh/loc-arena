@@ -305,7 +305,7 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
             "renamed: agents.covert_brief_ref is now agents.side_task_description_ref",
         ),
         (
-            "prompts: {serving.covert-brief: [agent.covert-steps]}\n",
+            "prompts: {serving.covert-brief.v2: [agent.covert-steps]}\n",
             "renamed: prompts.covert-brief is now prompts.side-task",
         ),
     ],
