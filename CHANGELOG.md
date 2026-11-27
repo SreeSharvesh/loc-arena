@@ -19,7 +19,7 @@ plays an attack and its honest twin, which sets the audit threshold; each play i
 pursue a covert side task, a rogue deployment of a model loop, which monitors try to catch. A stack run puts each part
 in its own container.
 
-## [434] - 2026-11-26: Three monitors read whole trajectories, over stored runs
+## [434] - 2026-11-27: Three monitors read whole trajectories, over stored runs
 
 ### Added
 
@@ -34,6 +34,13 @@ in its own container.
 
 - The monitor now calls the model of the role its entry names, where each called the trusted monitor's, so monitors can differ in model ([docs](docs/trajectory-monitors.md#how-each-one-rates)).
 - The model gateway's core now records the dollars the provider reports for each call it makes, single or batch, so each monitor's cost is told apart ([docs](docs/trajectory-monitors.md#run-monitors-again-over-a-stored-run)).
+
+## [433] - 2026-11-23: The model-selection covert briefs compose as the efficiency push's
+
+### Changed
+
+- The scenario composes the model-selection task's covert briefs from fragments, two of them the efficiency push's own, so both tasks' attack briefs share one structure ([docs](docs/run-config.md#prompts)).
+- The scenario tells attack agents of the model-evaluation runs their covert briefs in new words, so those attack plays are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 
 ## [432] - 2026-11-22: The run publish keeps the IAM badges workloads print
 
