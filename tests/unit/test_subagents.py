@@ -318,7 +318,8 @@ def test_a_subagents_brief_holds_neither_the_covert_objective_nor_its_agents_ass
     brief = build_subagent_briefs(attack)[lead.id]["scout"]
 
     assert [
-        str(text) in brief for text in (attack.covert.objective_prompt, lead.covert_brief, lead.brief)
+        str(text) in brief
+        for text in (attack.covert.objective_prompt, lead.side_task_description, lead.brief)
     ] == [
         False,
         False,

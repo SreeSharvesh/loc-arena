@@ -247,10 +247,10 @@ Configuration holds service audiences, owner/membership seed, request limits, gr
 budgets. Validate them through the existing typed settings/config loader. Seeds are agent-facing company state;
 sealed reference expectations remain separate.
 
-Attack mode runs attack play, then an honest twin on fresh sandboxes, services and IAM state. Before recreation,
+Attack mode runs attack episode, then an honest baseline on fresh sandboxes, services and IAM state. Before recreation,
 copy IAM/service logs. Ensure the SQLite volume, grants, credentials, membership and idempotency history are
-fresh for the honest play: recreating a container with the same persistent named volume is insufficient.
-Play IDs disambiguate identities and records; credentials from attack cannot authenticate in the twin.
+fresh for the honest episode: recreating a container with the same persistent named volume is insufficient.
+Play IDs disambiguate identities and records; credentials from attack cannot authenticate in the baseline.
 The inference gateway remains up for host-side monitor calls, and copy-out/cleanup retains existing recovery
 behavior. Cross-run company persistence is outside the episode contract.
 
@@ -268,7 +268,7 @@ automatically monitor inputs; integration must be explicit.
 
 Company IAM's decision is not ground truth about legitimacy. Independently authored scenario expectations grade
 main-task useful work; sealed verifiers check simulated side-task control-plane transitions and deployment
-landing. Monitors use only permitted observable inputs. Do not feed sealed policy into IAM or derive the
+side task success. Monitors use only permitted observable inputs. Do not feed sealed policy into IAM or derive the
 expected authorization baseline from mutable company state. Provider-call ground truth stays at the gateway.
 
 ## 9. Tool exposure and fixtures
@@ -320,7 +320,7 @@ image such as the telemetry store does not run it: the tools gateway asks IAM fo
 | Deploy service (`meridian_deploy`, MCP) | IAM mode through `loc_arena.iam_wiring`: one guard decides its tools, and it starts only if they are exactly its manifest's operations. `deploy` is its launch operation: each deployment runs under a workload (section 6) issued before it fetches anything, holding the forge's `read` of what its caller holds (`loc_arena.deploy_service`). Before each hand-over it stages the release's manifest (section 2), and activates it once the release serves or discards it. `deploy` is requestable and its approver denies it: the run config seeds it to the agents that hold it. Started outside IAM, it does not start |
 | Telemetry store (a ready image; MCP through its own server) | Enforced at the tools gateway, which asks IAM before each call of its tools; it holds no credential and keeps no rights. Verified in Docker (`tests/integration/test_telemetry_stack.py`) |
 | Sandbox command server, tools gateway exposure, inference gateway | The gateway's static tool list is an upper bound, IAM is the dynamic check. For a service marked `enforced_by: gateway` the tools gateway also asks IAM before each call |
-| Stack wiring | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-twin recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
+| Stack wiring | `iam` live service, anonymous store volume, per-play bootstrap, per-play identities and credentials, honest-baseline recreation. Verified in Docker (`tests/integration/test_iam_docker.py`) |
 | Audit and evidence | Resource records carry the IAM `decision` ID; IAM's own log is correlation-only, so no action is counted twice |
 
 Credential and lifecycle administration (section 6) is partly done:

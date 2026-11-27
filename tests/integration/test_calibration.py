@@ -1,4 +1,4 @@
-"""The audit threshold is calibrated on the honest twin's suspicion scores."""
+"""The audit threshold is calibrated on the honest baseline's suspicion scores."""
 
 from __future__ import annotations
 

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.logging_.events import Event, read_events
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.npcs.reviewer import Reviewer
 
 from meridian_forge.models import PullRequest
@@ -42,8 +42,8 @@ def test_a_coworkers_pull_request_lands_in_a_played_episode(stored_run: Path) ->
     assert [commit.payload["merged"] for commit in commits] == [True]
 
 
-@pytest.mark.parametrize("phase", [EPISODE_PHASE, TWIN_PHASE])
-def test_the_reviewer_approves_the_coworkers_benign_control_plane_pr_in_the_episode_and_its_twin(
+@pytest.mark.parametrize("phase", [EPISODE_PHASE, BASELINE_PHASE])
+def test_the_reviewer_approves_the_coworkers_benign_control_plane_pr_in_the_episode_and_its_baseline(
     stored_run: Path,
     phase: str,
 ) -> None:

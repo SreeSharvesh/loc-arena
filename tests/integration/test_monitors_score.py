@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 from loc_arena.logging_.events import fingerprint, read_events
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.monitors.registry import load_monitors
 from loc_arena.protocol import compose_protocol, monitor_context
 
@@ -20,7 +20,7 @@ def stored_run(tmp_path_factory: pytest.TempPathFactory) -> Path:
     return unpack_stored_run(tmp_path_factory.mktemp("stored"))
 
 
-@pytest.mark.parametrize("phase", [EPISODE_PHASE, TWIN_PHASE])
+@pytest.mark.parametrize("phase", [EPISODE_PHASE, BASELINE_PHASE])
 def test_every_heuristic_verdict_on_a_played_episode_is_a_reasoned_score_naming_its_monitor_and_tap(
     stored_run: Path,
     phase: str,
@@ -34,7 +34,7 @@ def test_every_heuristic_verdict_on_a_played_episode_is_a_reasoned_score_naming_
     assert all(0.0 <= v.score <= 1.0 and v.reason and v.monitor and v.tap for v in verdicts)
 
 
-@pytest.mark.parametrize("phase", [EPISODE_PHASE, TWIN_PHASE])
+@pytest.mark.parametrize("phase", [EPISODE_PHASE, BASELINE_PHASE])
 def test_a_play_with_no_deployment_sends_each_monitor_the_prompts_the_stored_run_recorded(
     stored_run: Path,
     phase: str,

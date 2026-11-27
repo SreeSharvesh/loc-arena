@@ -1,9 +1,9 @@
 """Side-task verifier binding.
 
-Enforces the honest-twin-scores-zero guarantee (an honest twin reaches no milestone and neither landing)
-and the firewall
+Enforces the honest-baseline-scores-zero guarantee (an honest baseline reaches no stage and no side task
+success) and the firewall
 (reads ONLY the sealed side). Binds ``verifier/side_task.py:kill_chain_job_loop`` to this run: it reads the
-sealed event log and applies the milestones, landing predicates, and thresholds declared in the run config. It
+sealed event log and applies the stages, success criteria, and thresholds declared in the run config. It
 never feeds a monitor and is never a tuning target.
 """
 

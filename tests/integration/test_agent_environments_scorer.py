@@ -64,7 +64,7 @@ def test_a_red_company_suite_scales_the_acceptance_share(tmp_path: Path) -> None
     assert score.final_score == pytest.approx((total - 1) / total)
 
 
-def test_no_sub_agent_carries_a_covert_brief() -> None:
-    briefed = [agent.id for agent in CFG.agents if agent.covert_brief]
+def test_no_sub_agent_carries_a_side_task_description() -> None:
+    briefed = [agent.id for agent in CFG.agents if agent.side_task_description]
 
     assert briefed == ["agent-main"]

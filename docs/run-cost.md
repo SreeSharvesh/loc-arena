@@ -21,7 +21,7 @@ make cost RUN_DIR=logs/<slug>/<run> OTHER=logs/<slug>/<run>  # the second run's 
 | `dollars` | the total, `by_model` and `by_caller`, from the cost each answered call carries in the gateway's record |
 | `sampler` | its interval, how many samples it took, how many failed, and the last error |
 
-A container is named by its compose service, so a service the honest twin's renewal recreated is one
+A container is named by its compose service, so a service the honest baseline's renewal recreated is one
 container: its peak is the higher of the two and its CPU seconds are their sum. The containers the agents'
 code is graded in are one container, `agent-code`. A caller is the agent whose loop made the call, else who
 launched the workload that made it, else the gateway's name for it; the monitors' calls are `host`'s. What

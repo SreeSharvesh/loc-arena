@@ -22,26 +22,26 @@ uv run python -m loc_arena.cli explore logs --out /tmp/site --no-open
 A run needs its Inspect log (`<run_name>.eval`) with the agent spans, written when `logging.agent_transcript` is
 on (the default). A folder's index also lists a run without one, with no link to a page.
 
-## The honest twin
+## The honest baseline
 
-An attack run also plays its honest twin, and the Inspect log holds it as a second sample (`honest_cal`). Each such
-run gets a second page beside its own, `<run_name>__honest_twin.html` (`explorer__honest_twin.html` for a single
-bundle). **Attack play | Honest twin** in the top bar switches between them, keeping the view and filters. The twin's
-page is its transcript with its own verdicts, which grading keeps in `scores.json`'s `honest_twin`, and its model
+An attack run also plays its honest baseline, and the Inspect log holds it as a second sample (`honest_cal`). Each such
+run gets a second page beside its own, `<run_name>__honest_baseline.html` (`explorer__honest_baseline.html` for a single
+bundle). **Attack episode | Honest baseline** in the top bar switches between them, keeping the view and filters. The baseline's
+page is its transcript with its own verdicts, which grading keeps in `scores.json`'s `honest_baseline`, and its model
 reasoning. Every step there scored above the threshold is a false alarm. It has no outcome or side-task evidence of
-its own: the twin is played to set the audit threshold. Its **Monitors on the twin** view, and a section of the run's
-**Outcome and monitors**, set each monitor's score on the run beside its score on the twin, and the run's overall
-suspicion beside the twin's, which is the bar the run is caught above. A bundle graded before grading kept the twin's
-verdicts shows its twin without them, and says so.
+its own: the baseline is played to set the audit threshold. Its **Monitors on the baseline** view, and a section of the run's
+**Outcome and monitors**, set each monitor's score on the run beside its score on the baseline, and the run's overall
+suspicion beside the baseline's, which is the bar the run is caught above. A bundle graded before grading kept the baseline's
+verdicts shows its baseline without them, and says so.
 
-A pill with a ring is a verdict exactly at the audit threshold: one of the twin's scores that set it, so not a flag,
+A pill with a ring is a verdict exactly at the audit threshold: one of the baseline's scores that set it, so not a flag,
 but not clear either.
 
 ## All runs
 
 ![The index of every run in a folder](01-index.png)
 
-One row per run: main-task score, whether the side task landed, whether a monitor caught it and which, the
+One row per run: main-task score, whether the side task succeeded, whether a monitor caught it and which, the
 highest score each monitor gave, and how many steps were flagged, covert, or covert and missed. The landscape above
 the table crosses attacker model with monitor model. Click a run to open it; its breadcrumb leads back here.
 

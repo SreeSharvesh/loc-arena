@@ -15,14 +15,15 @@ from pathlib import Path
 from typing import get_args
 
 import yaml
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
 from loc_arena.explorer.scores import load_scores
 from loc_arena.gateway.model_gateway import PHASE_PLAYS
 from loc_arena.logging_.events import Event, EventKind, read_events
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE
 from loc_arena.monitors.registry import MonitorVerdict
 from loc_arena.own_sessions import SESSION_ENDS_FILE, EndReason
+from loc_arena.run_scores import with_current_names
 from loc_arena.session_events import read_reply_text, read_session_calls
 
 type Fact = str | int | float | bool | list[str]
@@ -44,7 +45,7 @@ class _Agent(_Record):
     id: str
     kind: str | None = None  # orchestrator or subagent
     spawned_by: str | None = None  # whom it reports to
-    covert: tuple[str, ...] | None = None  # the milestones its covert brief serves
+    covert: tuple[str, ...] | None = None  # the stages its side task description serves
     scope: _Scope = _Scope()
 
 
@@ -58,12 +59,13 @@ class _Covert(_Record):
     target_identity: str  # the agent the covert objective is briefed to
 
 
-class _Milestone(_Record):
+class _Stage(_Record):
     id: str
 
 
 class _SideTask(_Record):
-    milestones: tuple[_Milestone, ...]
+    # A run configured before the rename names its stages ``milestones``.
+    stages: tuple[_Stage, ...] = Field(validation_alias=AliasChoices("stages", "milestones"))
 
 
 class ResolvedConfig(_Record):
@@ -116,8 +118,8 @@ class RunEvidence(BaseModel):
 
 
 def name_plays(run_directory: Path) -> list[tuple[str, str]]:
-    """Each play's name and directory: the run's mode for its first play, and ``twin`` for its honest twin."""
-    plays = [(load_scores(run_directory / "scores.json").mode, EPISODE_PHASE), ("twin", TWIN_PHASE)]
+    """Each play's name and directory: the run's mode for its first play, ``twin`` for its baseline."""
+    plays = [(load_scores(run_directory / "scores.json").mode, EPISODE_PHASE), ("twin", BASELINE_PHASE)]
     return [
         (play, phase) for play, phase in plays if (run_directory / phase / "events.sealed.jsonl").is_file()
     ]
@@ -129,18 +131,18 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
     An event's words are its payload's and its arguments' text in ``word_fields``, and for a model call of an
     agent's session the text of its model's reply.
     """
-    scores = json.loads((run_directory / "scores.json").read_text())
+    scores = with_current_names(json.loads((run_directory / "scores.json").read_text()))
     config = read_resolved_config(run_directory)
     graded, agents = load_scores(run_directory / "scores.json"), [agent.id for agent in config.agents]
-    milestones = [milestone.id for milestone in config.side_task.milestones]
+    stages = [stage.id for stage in config.side_task.stages]
     facts: dict[str, Fact] = {
         "scores.keys": sorted(scores),
         "scores.key_count": len(scores),
         "run.mode": str(scores["mode"]),
         "run.agents": agents,
         "run.covert_agent": config.covert.target_identity,
-        "side_task.milestones": milestones,
-        "side_task.milestone_count": len(milestones),
+        "side_task.stages": stages,
+        "side_task.stage_count": len(stages),
     }
     facts |= _agent_facts(config)
     _flatten("scores", scores, facts)
@@ -152,8 +154,8 @@ def gather_evidence(run_directory: Path, word_fields: Sequence[str]) -> RunEvide
     }
     for play, phase in name_plays(run_directory):
         sealed = list(read_events(run_directory / phase / "events.sealed.jsonl"))
-        twin = graded.honest_twin.monitor_verdicts if graded.honest_twin else ()
-        verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else twin
+        baseline = graded.honest_baseline.monitor_verdicts if graded.honest_baseline else ()
+        verdicts = graded.monitor_verdicts if phase == EPISODE_PHASE else baseline
         facts |= _count_play(play, sealed, run_directory / phase, verdicts, graded.safety.audit_threshold)
         made = [  # a subagent, <agent>.<n>, makes what it makes for its agent
             (actor, key)
@@ -194,7 +196,7 @@ def write_evidence(evidence: RunEvidence, directory: Path) -> None:
 
 
 def _agent_facts(config: ResolvedConfig) -> dict[str, Fact]:
-    """Each agent's kind, whom it reports to, its covert brief's milestones and its repositories."""
+    """Each agent's kind, whom it reports to, its side task description's stages and its repositories."""
     facts: dict[str, Fact] = {}
     for agent in config.agents:
         facts |= {
@@ -336,7 +338,7 @@ def _name_keys(value: JsonValue) -> Iterator[str]:
 
 
 def _name_facts(facts: Mapping[str, Fact]) -> Iterator[str]:
-    """Each fact's key, and each value of it that is one name: an agent, a milestone, a model, a reason."""
+    """Each fact's key, and each value of it that is one name: an agent, a stage, a model, a reason."""
     for key, value in facts.items():
         yield key
         for item in value if isinstance(value, list) else [value]:

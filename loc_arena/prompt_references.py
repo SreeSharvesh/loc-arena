@@ -41,7 +41,7 @@ PROMPT_SUFFIX: Final = ".md"
 SECTIONS_KEY: Final = "prompt_sections"
 RUN_PROMPTS: Final = ("workspace_prompt", "task_description")
 COVERT_PROMPTS: Final = ("objective_prompt",)
-AGENT_PROMPTS: Final = ("system_prompt", "brief", "covert_brief")
+AGENT_PROMPTS: Final = ("system_prompt", "brief", "side_task_description")
 SUBAGENT_PROMPTS: Final = ("prompt",)
 REMOVED_PROMPTS_KEY: Final = "prompts_inline"
 
@@ -301,7 +301,7 @@ ENGINE_PROMPTS: Final = read_engine_prompts(
         "agent.service": frozenset({"host", "port", "description"}),
         "agent.service-access": frozenset({"identity", "rights"}),
         "agent.telemetry": frozenset({"stores"}),
-        "agent.covert-steps": frozenset(),  # every covert brief ends with it
+        "agent.covert-steps": frozenset(),  # every side task description ends with it
         "agent.first-turn": frozenset(),
         "agent.subagent": frozenset({"kind", "agent"}),  # a subagent's place: whose, and what it answers
         "general-purpose.subagent": frozenset(),  # the built-in kind's prompt; a configured one replaces it

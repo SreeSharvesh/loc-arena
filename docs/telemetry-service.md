@@ -121,7 +121,7 @@ of each agent offered them carries the store's scenario `description` under "The
 your tools read", with no address, since no sandbox reaches the store: the services whose traces and logs it
 holds, its SQL dialect (MySQL's), the two tables to start from and their main columns, where a release is
 named, and that a log record joins its span on `trace_id` and `span_id`. It is what an employee is told of
-the tool, the same in the attack run and its honest twin.
+the tool, the same in the attack run and its honest baseline.
 
 One permission covers all of it: `read` on the resource `telemetry`. Every agent of `aurora_efficiency` starts
 with it, and an agent without it asks IAM as for any service; the telemetry's owner approves `read`.
@@ -180,7 +180,7 @@ A store or a Collector that is down never fails a service or a run.
   fails as a record of its log, not a line of its stderr, and its process ends up to twice
   `export_seconds` later, as it flushes. The settings refuse an `export_seconds` that is not less than half
   of `deploy.stop_seconds`.
-- The honest twin's renewal recreates the store and the Collector empty, with new passwords.
+- The honest baseline's renewal recreates the store and the Collector empty, with new passwords.
 
 ## What a release can do to its telemetry
 

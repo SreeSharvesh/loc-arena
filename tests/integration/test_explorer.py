@@ -1,4 +1,4 @@
-"""The explorer's pages of the stored run: a run played live in a stack, graded, with its honest twin."""
+"""The explorer's pages of the stored run: a run played live in a stack, graded, with its honest baseline."""
 
 from __future__ import annotations
 
@@ -10,7 +10,14 @@ from pathlib import Path
 
 import pytest
 from loc_arena import cli
-from loc_arena.explorer.build import RUN_TEMPLATE, TWIN_PLAY, build, build_folder, build_run_page, write_page
+from loc_arena.explorer.build import (
+    BASELINE_PLAY,
+    RUN_TEMPLATE,
+    build,
+    build_folder,
+    build_run_page,
+    write_page,
+)
 from loc_arena.explorer.page import RunPage
 from loc_arena.explorer.settings import ExplorerSettings
 from loc_arena.gateway.model_gateway import CALL_RECORD_FILE, locate_call_log
@@ -19,7 +26,7 @@ from tests._stored_run import unpack_stored_run
 
 PAGE_DATA = re.compile(r'<script id="data" type="application/json">(.*?)</script>', re.S)
 # The reasoning each play's coworker reply came with; no agent's reply came with any.
-REASONING = {"attack": "a short answer will do", "twin": "the twin's reasoning"}
+REASONING = {"attack": "a short answer will do", "twin": "the baseline's reasoning"}
 
 
 @pytest.fixture(scope="module")
@@ -111,10 +118,10 @@ def test_the_page_carries_the_reasoning_the_gateway_recorded_with_a_reply_to_the
     assert [call["reasoning"] for call in calls if call["reasoning"]] == [REASONING["attack"]]
 
 
-def test_the_twins_page_shows_the_reasoning_of_the_twins_own_calls(stack_bundle: Path) -> None:
-    twin = build_run_page(stack_bundle, ExplorerSettings(), play=TWIN_PLAY)
+def test_the_baselines_page_shows_the_reasoning_of_the_baselines_own_calls(stack_bundle: Path) -> None:
+    baseline = build_run_page(stack_bundle, ExplorerSettings(), play=BASELINE_PLAY)
 
-    assert _list_reasoning(twin) == [REASONING["twin"]]
+    assert _list_reasoning(baseline) == [REASONING["twin"]]
 
 
 def test_a_run_without_a_gateway_call_log_shows_no_reasoning(stored_bundle: Path) -> None:
@@ -130,7 +137,7 @@ def test_a_reply_outside_any_agents_turn_is_nothing_an_agent_said(stored_bundle:
     assert [(bool(call.reply), call.said) for call in calls] == [(True, None)]  # the coworker's one reply
 
 
-def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
+def test_a_folder_pages_the_honest_baseline_beside_the_run_and_links_them_both_ways(
     stored_bundle: Path,
     tmp_path: Path,
 ) -> None:
@@ -140,69 +147,73 @@ def test_a_folder_pages_the_honest_twin_beside_the_run_and_links_them_both_ways(
     index = build_folder(folder, tmp_path / "site", ExplorerSettings())
 
     pages = sorted((index.parent / "runs").glob("*.html"))
-    twin_path = next(page for page in pages if page.stem.endswith("__honest_twin"))
-    run_path = next(page for page in pages if page is not twin_path)
-    twin, run = _page_data(twin_path), _page_data(run_path)
-    assert (run["run"]["play"], twin["run"]["play"]) == ("episode", TWIN_PLAY)
-    assert run["run"]["peer"] == twin_path.name and twin["run"]["peer"] == run_path.name
-    assert twin["outcome"] is None and run["outcome"] is not None
-    assert twin["monitors"] == []  # the monitor rows describe the run's play
-    assert twin["steps"] and twin["lanes"]
-    assert twin["run"]["audit_threshold"] == run["run"]["audit_threshold"]
+    baseline_path = next(page for page in pages if page.stem.endswith("__honest_baseline"))
+    run_path = next(page for page in pages if page is not baseline_path)
+    baseline, run = _page_data(baseline_path), _page_data(run_path)
+    assert (run["run"]["play"], baseline["run"]["play"]) == ("episode", BASELINE_PLAY)
+    assert run["run"]["peer"] == baseline_path.name and baseline["run"]["peer"] == run_path.name
+    assert baseline["outcome"] is None and run["outcome"] is not None
+    assert baseline["monitors"] == []  # the monitor rows describe the run's play
+    assert baseline["steps"] and baseline["lanes"]
+    assert baseline["run"]["audit_threshold"] == run["run"]["audit_threshold"]
 
 
-def test_the_twins_page_is_the_twins_own_play_not_the_runs(stored_bundle: Path) -> None:
+def test_the_baselines_page_is_the_baselines_own_play_not_the_runs(stored_bundle: Path) -> None:
     run = build_run_page(stored_bundle, ExplorerSettings())
-    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
+    baseline = build_run_page(stored_bundle, ExplorerSettings(), play=BASELINE_PLAY)
 
-    assert twin.steps and twin.steps != run.steps
-    assert (twin.run.name, twin.run.mode) == (run.run.name + "__honest_twin", "honest")
+    assert baseline.steps and baseline.steps != run.steps
+    assert (baseline.run.name, baseline.run.mode) == (run.run.name + "__honest_baseline", "honest")
 
 
-def test_the_twins_page_shows_the_twins_own_verdicts_not_the_runs(stored_bundle: Path) -> None:
+def test_the_baselines_page_shows_the_baselines_own_verdicts_not_the_runs(stored_bundle: Path) -> None:
     scores = json.loads((stored_bundle / "scores.json").read_text())
 
-    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
+    baseline = build_run_page(stored_bundle, ExplorerSettings(), play=BASELINE_PLAY)
 
-    shown = sorted((v.monitor, v.score, v.reason) for v in twin.verdicts)
+    shown = sorted((v.monitor, v.score, v.reason) for v in baseline.verdicts)
     assert shown == sorted(
-        (v["monitor"], v["score"], v["reason"]) for v in scores["honest_twin"]["monitor_verdicts"]
+        (v["monitor"], v["score"], v["reason"])
+        for v in scores["honest_twin"]["monitor_verdicts"]  # the stored run predates the rename
     )
     assert shown != sorted((v["monitor"], v["score"], v["reason"]) for v in scores["monitor_verdicts"])
 
 
-def test_both_pages_hold_the_run_to_the_bar_its_honest_twin_set(stored_bundle: Path) -> None:
+def test_both_pages_hold_the_run_to_the_bar_its_honest_baseline_set(stored_bundle: Path) -> None:
     safety = json.loads((stored_bundle / "scores.json").read_text())["safety"]
 
     run = build_run_page(stored_bundle, ExplorerSettings())
-    twin = build_run_page(stored_bundle, ExplorerSettings(), play=TWIN_PLAY)
+    baseline = build_run_page(stored_bundle, ExplorerSettings(), play=BASELINE_PLAY)
 
-    assert run.calibration is not None and run.calibration == twin.calibration
+    assert run.calibration is not None and run.calibration == baseline.calibration
     assert (run.calibration.run_overall, run.calibration.bar) == (
         safety["overall_suspicion"],
         safety["aggregation"]["threshold"],
     )
-    assert run.calibration.twin_overall == run.calibration.bar  # one twin: its own overall is the bar
+    assert run.calibration.baseline_overall == run.calibration.bar  # one baseline: its own overall is the bar
 
 
-def test_a_bundle_graded_before_the_twins_scores_were_kept_shows_the_twin_without_them(
+def test_a_bundle_graded_before_the_baselines_scores_were_kept_shows_the_baseline_without_them(
     stored_bundle: Path,
     tmp_path: Path,
 ) -> None:
     bundle = _copy_bundle(stored_bundle, tmp_path / "bundle")
     scores = json.loads((bundle / "scores.json").read_text())
-    del scores["honest_twin"]
+    scores.pop("honest_twin"), scores.pop("honest_baseline", None)  # the stored run holds the deprecated name
     (bundle / "scores.json").write_text(json.dumps(scores))
 
-    twin = build_run_page(bundle, ExplorerSettings(), play=TWIN_PLAY)
+    baseline = build_run_page(bundle, ExplorerSettings(), play=BASELINE_PLAY)
 
-    assert (twin.verdicts, twin.calibration) == ((), None)
+    assert (baseline.verdicts, baseline.calibration) == ((), None)
 
 
-def test_a_single_bundle_writes_the_twins_page_beside_its_own(stored_bundle: Path, tmp_path: Path) -> None:
+def test_a_single_bundle_writes_the_baselines_page_beside_its_own(
+    stored_bundle: Path,
+    tmp_path: Path,
+) -> None:
     bundle = _copy_bundle(stored_bundle, tmp_path / "bundle")
 
     page = build(bundle, None, ExplorerSettings())
 
     assert page == bundle / "explorer.html"
-    assert (bundle / "explorer__honest_twin.html").exists()
+    assert (bundle / "explorer__honest_baseline.html").exists()

@@ -5,7 +5,7 @@ A stack run starts it as the scenario's ``agents`` entry: ``python -m loc_arena.
 issues each registered agent and created schedule its identity, runs executions on the runners the entry
 declares (``loc_arena.runner_pool``), fires its schedules, and writes the audit record to stdout. A new
 container writes the package's seed (agents, telemetry settings, schedules) into a new database
-(``agents_service.database``), so the honest twin's recreated service starts where the episode's did. A
+(``agents_service.database``), so the honest baseline's recreated service starts where the episode's did. A
 restarted process keeps its agents with their identities, its executions with their checkpoints, its settings
 and its schedules, and resumes from a checkpoint what ran when the last one ended. An agent's merged edit
 to the package goes live when the deploy service releases it (``docs/deploy-service.md``).

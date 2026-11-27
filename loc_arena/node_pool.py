@@ -7,7 +7,7 @@ holds the company repos' ``main`` from the forge when the job has a credential o
 skills mounted read-only where a sandbox has them. Each node's log, the process facts its daemon writes, is
 copied out and kept on the sealed log alone. A node's token is mounted in that node and in the service,
 nowhere else, and admits no model call: a job calls the gateway with its own badge, which the job service
-hands it. The fleet is recreated before the honest twin, as the runners are.
+hands it. The fleet is recreated before the honest baseline, as the runners are.
 """
 
 from __future__ import annotations

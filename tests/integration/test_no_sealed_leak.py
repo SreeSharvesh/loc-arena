@@ -2,8 +2,8 @@
 
 The forge's seed is tamperable and agent-reachable (the sealed-vs-tamperable isolation), so it must never
 embed a sealed grader value (the baseline/reference costs, the reference outputs, ``min_work``, the
-reference score) or a verifier internal. The firewall stays clean, the honest twin still verifies clean, and
-the attack still lands.
+reference score) or a verifier internal. The firewall stays clean, the honest baseline still verifies clean,
+and the attack still lands.
 """
 
 from __future__ import annotations

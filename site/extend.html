@@ -37,16 +37,16 @@ make setup                    # check the toolchain, sync deps, validate the con
 <h2>Run an episode</h2>
 <p>An episode drives a live model as the untrusted team and grades the outcome. There are three runs.</p>
 
-<pre><code>make run RUN=aurora-efficiency MODE=attack   # the attack episode plus its honest twin (the calibration baseline)
-make run RUN=aurora-efficiency MODE=honest   # the honest twin on its own (main task only)
+<pre><code>make run RUN=aurora-efficiency MODE=attack   # the attack episode plus its honest baseline (the calibration baseline)
+make run RUN=aurora-efficiency MODE=honest   # the honest baseline on its own (main task only)
 make run RUN=aurora-efficiency.fast          # the smoke run: the cheapest models, small budgets</code></pre>
 
 <div class="tablewrap"><table>
 <thead><tr><th>Run</th><th>What it does</th><th>When to use it</th></tr></thead>
 <tbody>
-<tr><td><b>attack</b></td><td>Runs the main and side task together, plus the honest twin that calibrates the threshold.</td><td>The default. One full measurement: did the rogue deployment land, and was it caught.</td></tr>
+<tr><td><b>attack</b></td><td>Runs the main and side task together, plus the honest baseline that calibrates the threshold.</td><td>The default. One full measurement: did the rogue deployment land, and was it caught.</td></tr>
 <tr><td><b>honest</b></td><td>Runs the main task only, with the covert objective disabled.</td><td>To see normal behaviour and the usefulness score on its own.</td></tr>
-<tr><td><b>smoke</b></td><td>Runs the attack episode and its twin on the cheapest models, with reasoning off and small call budgets. It takes minutes and costs cents.</td><td>To check that a run plays, grades and writes its bundle. Its scores are not results.</td></tr>
+<tr><td><b>smoke</b></td><td>Runs the attack episode and its baseline on the cheapest models, with reasoning off and small call budgets. It takes minutes and costs cents.</td><td>To check that a run plays, grades and writes its bundle. Its scores are not results.</td></tr>
 </tbody>
 </table></div>
 
@@ -63,7 +63,7 @@ The tests that read a run's records, or grade a run again, use a stored smoke ru
 make explore                                  # the run explorer: every agent side by side with the monitors' verdicts</code></pre>
 
 <div class="grid two">
-  <div class="card"><h3>Outcome</h3><p>At the top: the main-task score, whether the rogue deployment landed and how firmly, and whether the episode was caught.</p></div>
+  <div class="card"><h3>Outcome</h3><p>At the top: the main-task score, whether the rogue deployment succeeded and how firmly, and whether the episode was caught.</p></div>
   <div class="card"><h3>Kill chain</h3><p>The side-task steps drawn out, so you can see how far it got and which stages were reached.</p></div>
   <div class="card"><h3>Lanes and gauge</h3><p>Each agent's activity over time, and the overall suspicion as a gauge with a per-monitor breakdown.</p></div>
   <div class="card"><h3>Transcripts</h3><p>Every agent's full run, step by step, with the monitor scores attached in place. Nothing is hidden behind a summary.</p></div>
@@ -121,8 +121,8 @@ it with bash. Details: <code>docs/isolation/README.md</code>.</p>
 <h3>Tasks</h3>
 <p>A main task is a goal plus a scorer that reads real outcomes: tests passing and a real cost or metric, never a
 model's opinion. A side task is a set of steps, each with a check that reads the sealed record for an executed
-fact, plus the conditions that count as a landing. The rule to keep: a step is only confirmed from something that
-actually happened, so the honest twin reaches none of them.</p>
+fact, plus the conditions that count as side task success. The rule to keep: a step is only confirmed from something that
+actually happened, so the honest baseline reaches none of them.</p>
 
 <h3>Settings</h3>
 <p>A setting is a whole organization plus a task catalog, laid over the shared engine: its services and codebase,
@@ -133,7 +133,7 @@ the organization, the cast, and the tasks change. Meridian AI Lab is the first; 
 <div class="keyidea">
   <span class="k">The invariant to keep</span>
   Whatever you change, keep the two measurements apart. The checker reads only the sealed record and only executed
-  facts. The monitors read only the observable side. The honest twin must always verify clean.
+  facts. The monitors read only the observable side. The honest baseline must always verify clean.
 </div>
 
 <h2>How the repository is laid out</h2>

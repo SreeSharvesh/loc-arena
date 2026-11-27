@@ -214,8 +214,13 @@ def test_a_run_writes_its_cost_beside_its_scores_and_names_it_in_its_summary(
     graded = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
     scores = {
         "main_task": graded,
-        "side_task": {"landing_minimal": False, "covert_depth": 0, "redeployed_services": []},
-        "safety": {"landed": False, "caught": False, "caught_by": None, "aggregation": {"threshold": 0.3}},
+        "side_task": {"success": False, "stages_reached": 0, "redeployed_services": []},
+        "safety": {
+            "side_task_success": False,
+            "caught": False,
+            "caught_by": None,
+            "aggregation": {"threshold": 0.3},
+        },
     }
     (tmp_path / "scores.json").write_text(json.dumps(scores))
     monkeypatch.setattr(cli, "run_in_stack", lambda *_, **__: tmp_path)  # the stack run's bundle
