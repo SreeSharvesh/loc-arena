@@ -141,7 +141,7 @@ def _cmd_monitor(args: argparse.Namespace) -> int:
     names = [name for name in args.monitors.split(",") if name]
     try:
         rerun = rerun_monitors(config, run_directory, names, out, monitors_path=monitors)
-    except (ConfigError, FileExistsError) as error:  # no such monitor, or a folder that holds something
+    except (ConfigError, FileNotFoundError, FileExistsError) as error:  # what the caller can put right
         print(error, file=sys.stderr)
         return 1
     print(render_rerun(rerun))
@@ -396,9 +396,9 @@ def _add_readers(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> No
 
     p_monitor = sub.add_parser(
         "monitor",
-        help="run monitors again over one graded run, changing nothing of it: their scores and cost",
+        help="run monitors again over one played run, changing nothing of it: their scores and cost",
     )
-    p_monitor.add_argument("run_directory", help="the run's directory, which holds scores.json")
+    p_monitor.add_argument("run_directory", help="the run's directory, which holds each play's folder")
     p_monitor.add_argument("--monitors", required=True, help="the monitors to run, by name, comma-separated")
     p_monitor.add_argument("--run", default="aurora-efficiency", help="the config whose monitors to use")
     p_monitor.add_argument("--out", default=None, help="where to write (default: extras/ in the run)")
