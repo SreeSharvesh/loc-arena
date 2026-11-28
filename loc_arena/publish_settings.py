@@ -85,5 +85,5 @@ class PublishSettings(SettingsGroup):
     )
     command_seconds: PositiveFloat = Field(
         default=600.0,
-        description="The longest one git or gh command of a publish may take; past it the publish fails.",
+        description="The longest one git command of a publish may take; past it the publish fails.",
     )

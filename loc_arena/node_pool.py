@@ -85,8 +85,9 @@ def render_nodes(
     """Each node's compose service: ``built`` from the ``worker`` target, on ``network`` alone.
 
     The first node builds the image they all run, so compose builds it once; the others never pull it. Each
-    holds its own token, takes a service's limits, mounts ``skills``, the mount a sandbox has of the
-    scenario's skills, and nothing else, and comes back if a job kills its daemon.
+    holds its own token, takes the node limits (``node_cpus``, ``node_memory_mb``) and a sandbox's process
+    limit, mounts ``skills``, the mount a sandbox has of the scenario's skills, and nothing else, and comes
+    back if a job kills its daemon.
     """
     owner = find_node_pool_owner(config)
     if owner is None:
