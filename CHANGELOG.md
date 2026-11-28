@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [455] - 2026-11-28: The telemetry reader runs in the engine image by name
+
+### Fixed
+
+- The stack runs the telemetry store's reader in the engine image by name, where it took the first built service's image and could pick a scenario's own ([docs](docs/telemetry-service.md)).
+
 ## [454] - 2026-11-28: A run is graded with the monitors file it names
 
 ### Fixed
