@@ -902,8 +902,8 @@ def stack_run(tmp_path_factory: pytest.TempPathFactory) -> StackRun:
     try:
         services = [GATEWAY_SERVICE, *sandboxes, NOTES.name, FORGE.name, CHAT.name, AGENTS_SERVICE.name]
         services += [TOOLS_GATEWAY_SERVICE]
-        # The gateway, the forge and the episode share the engine image: built once, before any container
-        # starts from it, and never again, nor a running service recreated, since a build need not reproduce.
+        # The live services and the episode share the engine image: built once, before any container starts
+        # from it, and never again, nor a running service recreated, since a build need not reproduce.
         run_docker(*compose, "build", env=environment)
         run_docker(*compose, "up", "--detach", "--wait", "--no-build", *services, env=environment)
         # To inspect, as `run` makes another.

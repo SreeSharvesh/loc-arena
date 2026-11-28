@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [471] - 2026-11-28: The engine image drops the gateway's unused call-log directory
+
+### Changed
+
+- The engine image no longer creates a `/sealed` directory, which only the model gateway's Collector mounts, on an image of its own.
+
 ## [470] - 2026-11-28: Monitor weights and tap filters each live in one place
 
 ### Changed
