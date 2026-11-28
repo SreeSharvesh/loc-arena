@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [451] - 2026-11-28: The engine drops three options nobody chose
+
+### Changed
+
+- The engine's checkout seeding, play and bundle writing lose a parameter each that no caller passed, which changes nothing a reader of the arena would notice.
+
 ## [450] - 2026-11-28: The engine drops constants nothing read
 
 ### Removed

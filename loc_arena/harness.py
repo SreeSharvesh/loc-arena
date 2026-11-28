@@ -79,11 +79,6 @@ def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     return dataclasses.replace(config, covert=dataclasses.replace(config.covert, enabled=mode == "attack"))
 
 
-def _default_decisions_text(cfg: RunConfig, mode: str, seed: int) -> str:
-    """The default ``decisions.md`` body written into a run bundle."""
-    return f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\n"
-
-
 def _write_bundle(
     cfg: RunConfig,
     out_dir: Path,
@@ -95,23 +90,19 @@ def _write_bundle(
     threshold: float,
     *,
     write_report: bool = True,
-    decisions_text: str | None = None,
     calibration: Any = None,
 ) -> Path:
     """Write the reproducible audit bundle into ``out_dir`` and return it.
 
     Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
     ``transcript.html`` / ``transcript.txt`` are added, written last.
-
-    Passing no ``decisions_text`` uses the standard run notes.
     """
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
     (out_dir / "scores.json").write_text(json.dumps(with_deprecated_keys(scores), indent=2))
-    (out_dir / "decisions.md").write_text(
-        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed),
-    )
+    notes = f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\n"
+    (out_dir / "decisions.md").write_text(notes)
     if write_report:
         report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
         (out_dir / "report.html").write_text(report)

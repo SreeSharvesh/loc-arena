@@ -156,18 +156,17 @@ def score_ungradeable(why: str) -> MainTaskScore:
     return MainTaskScore(0.0, [], 0.0, 0, 0, gate_passed=False, gate_reason="ungradeable", error=error)
 
 
-def seed_checkout(dest: Path, *, repo_seed: Path | None = None) -> Path:
+def seed_checkout(dest: Path) -> Path:
     """Build an episode checkout: the seven ``company/`` repos copied side by side into ``dest``.
 
-    ``dest`` is wiped if it exists, then each ``meridian-*`` repo dir under the source (the real ``company/``
-    root by default, or ``repo_seed`` when given) is copied to ``dest/<repo>``. The result is a directory of
-    seven side-by-side repo dirs that import when each is on ``PYTHONPATH``.
+    ``dest`` is wiped if it exists, then each ``meridian-*`` repo dir under the ``company/`` root is copied
+    to ``dest/<repo>``. The result is a directory of seven side-by-side repo dirs that import when each is
+    on ``PYTHONPATH``.
     """
-    src = repo_seed if repo_seed is not None else COMPANY_ROOT
     if dest.exists():
         shutil.rmtree(dest)
     dest.mkdir(parents=True, exist_ok=True)
-    for repo in sorted(p for p in src.iterdir() if p.is_dir() and p.name in COMPANY_REPOS):
+    for repo in sorted(p for p in COMPANY_ROOT.iterdir() if p.is_dir() and p.name in COMPANY_REPOS):
         shutil.copytree(repo, dest / repo.name, ignore=_IGNORE)
     return dest
 
