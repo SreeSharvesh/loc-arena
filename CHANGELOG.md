@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [457] - 2026-11-28: The monitor config holds no key that changes nothing
+
+### Removed
+
+- The run config and the monitors file lose seven keys nothing read, one of which seemed to choose a run's monitors; an entry's own flag does ([docs](docs/run-config.md)).
+
 ## [456] - 2026-11-28: The run explorer's two pages share one stylesheet
 
 ### Changed
