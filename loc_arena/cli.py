@@ -82,7 +82,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     config = load_run_config(_config_path(args.run))
     if args.play_only:  # the stack's episode container plays where it is
         run_directory = locate_run(config, args.mode, args.instance or secrets.token_hex(3), Path(args.out))
-        play_run(config, run_directory, mode=args.mode, next_phase=args.next_phase)
+        play_run(config, run_directory, mode=args.mode)
         print(f"played: {run_directory}")
         return 0
     instance, logs = secrets.token_hex(3), Path(args.out)
@@ -333,12 +333,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument(
         "--play-only",
         action="store_true",
-        help="internal to stack runs: play in this episode container, and leave grading to the host",
-    )
-    p_run.add_argument(
-        "--next-phase",
-        action="store_true",
-        help="internal to stack runs: with --play-only, play only the first phase the run has not played",
+        help="internal to stack runs: play the first phase the run has not played in this episode container, "
+        "and leave grading to the host",
     )
     p_run.add_argument(
         "--instance",

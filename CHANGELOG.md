@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [477] - 2026-11-28: Stack runs drop an internal flag they always passed
+
+### Removed
+
+- The run command no longer takes the internal flag `--next-phase`, since the stack always passed it and the path without it was dead.
+
 ## [476] - 2026-11-28: The agent trace drops a hook nothing calls
 
 ### Removed
