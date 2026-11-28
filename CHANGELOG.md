@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [475] - 2026-11-28: Agents' trust and branch keys go, as nothing read them
+
+### Removed
+
+- The run config no longer holds an agent's trust and branch keys, which nothing read; a config that still sets them loads and ignores them.
+
 ## [474] - 2026-11-28: Monitor settings drop three keys no run reads
 
 ### Removed

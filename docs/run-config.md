@@ -49,7 +49,7 @@ the keys of the removed turn loop and scripted runs (`policy`, `scripted_moves`,
 
 | Field | What it sets |
 |---|---|
-| `id`, `kind`, `trust`, `branch`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role; `spawned_by` names the agent it reports to. The team is one tree: one agent has no `spawned_by`, it is the root. `RunConfig.roster` lists the team from its root, each agent before the agents that report to it |
+| `id`, `kind`, `spawned_by` | identity (a DNS label: `sandbox-<id>` names its sandbox) and role; `spawned_by` names the agent it reports to. The team is one tree: one agent has no `spawned_by`, it is the root. `RunConfig.roster` lists the team from its root, each agent before the agents that report to it |
 | `scope` | what the agent may do; each service enforces it on the caller |
 | `sandbox.tools` | the MCP tools agentgateway offers it, by service: `{forge: [open_pr, merge], chat: [post, send_dm, read_dms]}`; it refuses the rest, and a tool grants nothing: a call takes the permission IAM checks for it |
 | `sandbox.rights` | its starting rights, by service, which IAM seeds as its grants: `{notes: [read, write], forge: [read, push, open_pr, merge]}`; each a permission the service's IAM manifest checks |

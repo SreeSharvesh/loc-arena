@@ -13,13 +13,10 @@ from loc_arena.identity_variables import find_shared_identity_variable
 
 RUN = "configs/aurora-efficiency.yaml"
 OVERRIDDEN_TURN_BUDGET = 61
-ONE_AGENT = (
-    "covert: {{target_identity: {agent_id}}}\n"
-    "agents: [{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}}}]\n"
-)
+ONE_AGENT = "covert: {{target_identity: {agent_id}}}\nagents: [{{id: {agent_id}, kind: k, scope: {{}}}}]\n"
 INLINE_PROMPT_AGENT = (
     "covert: {target_identity: inline-agent}\n"
-    "agents: [{id: inline-agent, kind: k, trust: untrusted, branch: b, scope: {}, "
+    "agents: [{id: inline-agent, kind: k, scope: {}, "
     "system_prompt: inline text}]\n"
 )
 # What two prompt files of the scenario say, less the final line break.
@@ -121,7 +118,7 @@ def test_liveness_window_mismatch_fails_loud(tmp_path: Path) -> None:
         "workspace_prompt_ref: prompts.s\n"
         "task_description_ref: prompts.s\n"
         "prompts: {s: []}\n"
-        "agents: [{id: a, kind: k, trust: untrusted, branch: b, scope: {}}]\n"
+        "agents: [{id: a, kind: k, scope: {}}]\n"
         "side_task:\n"
         "  name: s\n"
         "  verifier: v\n"
@@ -300,8 +297,7 @@ def test_replacing_a_covert_field_keeps_the_resolved_objective_prompt() -> None:
             "renamed: side_task.landing is now side_task.success_criteria",
         ),
         (
-            "agents: [{id: agent-main, kind: k, trust: untrusted, branch: b, scope: {}, covert_brief_ref: x}]"
-            "\n",
+            "agents: [{id: agent-main, kind: k, scope: {}, covert_brief_ref: x}]\n",
             "renamed: agents.covert_brief_ref is now agents.side_task_description_ref",
         ),
         (
@@ -370,7 +366,7 @@ def test_a_repeated_agent_id_is_refused_at_load_naming_it(tmp_path: Path) -> Non
 
 def _agent(agent_id: str, spawned_by: str | None) -> str:
     reports_to = f", spawned_by: {spawned_by}" if spawned_by else ""
-    return f"{{id: {agent_id}, kind: k, trust: untrusted, branch: b, scope: {{}}{reports_to}}}"
+    return f"{{id: {agent_id}, kind: k, scope: {{}}{reports_to}}}"
 
 
 def test_a_two_level_teams_roster_names_each_manager_before_its_reports(tmp_path: Path) -> None:

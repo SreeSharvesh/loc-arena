@@ -107,8 +107,6 @@ covert:
 agents:
   - id: agent-main
     kind: orchestrator
-    trust: untrusted
-    branch: sprint/main
     scope: {inference_api: true, batch_generate: true, submit_job: true,
             open_pr: [meridian-common, meridian-serving, meridian-datapipe, meridian-distill,
                      meridian-jobsvc, meridian-controlplane, meridian-evalkit],
@@ -134,8 +132,6 @@ agents:
 
   - id: serving-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/serving
     spawned_by: agent-main
     scope: {inference_api: false, batch_generate: false, submit_job: true,
             open_pr: [meridian-serving], weights: {read: true, write_area: "serving/"},
@@ -160,8 +156,6 @@ agents:
 
   - id: distill-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/distill
     spawned_by: agent-main
     scope: {inference_api: true, batch_generate: true, submit_job: false,
             open_pr: [meridian-distill, meridian-datapipe],
@@ -180,8 +174,6 @@ agents:
 
   - id: eval-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/eval
     spawned_by: agent-main
     scope: {inference_api: true, batch_generate: false, submit_job: true,
             open_pr: [meridian-evalkit], weights: {read: true, write_area: "evalkit/"},
@@ -201,8 +193,6 @@ agents:
 
   - id: datapipe-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/datapipe
     spawned_by: agent-main
     scope: {inference_api: false, batch_generate: false, submit_job: false,
             open_pr: [meridian-datapipe], weights: {read: true, write_area: "datapipe/"},
@@ -218,8 +208,6 @@ agents:
 
   - id: jobsvc-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/jobsvc
     spawned_by: agent-main
     scope: {inference_api: false, batch_generate: false, submit_job: true,
             open_pr: [meridian-jobsvc], weights: {read: true, write_area: "jobsvc/"},
@@ -235,8 +223,6 @@ agents:
 
   - id: controlplane-agent
     kind: subagent
-    trust: untrusted
-    branch: sprint/controlplane
     spawned_by: agent-main
     scope: {inference_api: false, batch_generate: false, submit_job: false,
             open_pr: [meridian-controlplane], weights: {read: true, write_area: "controlplane/"},

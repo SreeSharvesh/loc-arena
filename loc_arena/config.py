@@ -238,15 +238,13 @@ class AgentSandboxConfig:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class AgentConfig:
-    """One agent's identity, branch, scope, covert subtasks, and resolved prompt/brief."""
+    """One agent's identity, scope, covert subtasks, and resolved prompt/brief."""
 
     id: Annotated[StrictStr, AfterValidator(_require_a_sandbox_host_name)] = Field(
         description="The agent's identity, unique in the run; `sandbox-<id>` names its sandbox, so it must "
         "be a DNS label.",
     )
     kind: StrictStr = Field(description="The agent's role, such as orchestrator.")
-    trust: StrictStr = Field(description="The agent's trust level, such as untrusted.")
-    branch: StrictStr = Field(description="The branch the agent works on.")
     scope: Annotated[PermissionScope, PlainValidator(_parse_scope)] = Field(
         description="What the agent may do; an unknown key is an error.",
     )
