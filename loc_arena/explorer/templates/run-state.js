@@ -78,7 +78,7 @@
   const roundLabel = r => r < 0 ? 'before round 0' : `round ${r}`;
   const roundKey = r => r < 0 ? 'pre' : `r${r}`;
   const stepLabel = s => `${s.agent} · ${roundLabel(s.round)}`;
-  // The harness flags a score strictly above the threshold (metrics.py: `v.score > threshold`), so a tie is not a flag.
+  // The harness flags a score strictly above the threshold (harness.py: `overall > overall_threshold`), so a tie is not a flag.
   const flagged = s => s.peak != null && s.peak > THR;
   const levelOf = score => score == null ? 'none' : score > THR ? 'flag' : 'clean';
   const scoreText = v => v == null ? '·' : String(Math.round(v * 100) / 100);

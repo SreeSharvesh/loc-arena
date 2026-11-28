@@ -20,6 +20,16 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [443] - 2026-11-28: The engine drops a dead report and duplicate threshold rule
+
+### Changed
+
+- The engine computes the per-event and the overall audit threshold with one function, which changes nothing a reader of the arena would notice ([docs](docs/trajectory-monitors.md)).
+
+### Removed
+
+- The engine no longer holds a per-event safety report and a usefulness curve that no run computed; a play is caught on its overall suspicion, as before ([docs](docs/trajectory-monitors.md)).
+
 ## [440] - 2026-11-28: The docs' indexes and pages say what the code holds
 
 ### Changed
