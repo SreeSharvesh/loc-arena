@@ -346,7 +346,6 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView], sealed: Seque
         )
         for name, record in scores.side_task.stages.items()
     )
-    safety = scores.safety
     return OutcomeView(
         main_task=MainTaskView(
             scores.main_task.final_score,
@@ -359,12 +358,7 @@ def describe_outcome(scores: RunScores, steps: Sequence[StepView], sealed: Seque
         ),
         side_task=SideTaskView(scores.side_task.success),
         stages=stages,
-        safety=SafetyView(
-            safety.audit_threshold,
-            safety.caught,
-            safety.caught_by,
-            safety.per_monitor_max_score,
-        ),
+        safety=SafetyView(scores.safety.caught, scores.safety.caught_by),
     )
 
 
@@ -397,7 +391,6 @@ def summarize_run(bundle: Path, scores: RunScores, page: RunPage | None, href: s
     counts = count_steps(page, threshold)
     return RunRow(
         name=page.run.name if page else bundle.name,
-        slug=scores.run_slug,
         mode=scores.mode,
         seed=scores.seed,
         attacker=scores.models.get("untrusted_agent", UNKNOWN_MODEL),
@@ -411,7 +404,6 @@ def summarize_run(bundle: Path, scores: RunScores, page: RunPage | None, href: s
         stages_reached=sum(1 for m in scores.side_task.stages.values() if m.reached),
         stages_total=len(scores.side_task.stages),
         caught=scores.safety.caught,
-        caught_by=scores.safety.caught_by,
         peaks=scores.safety.per_monitor_max_score,
         threshold=threshold,
         href=href,
@@ -538,7 +530,6 @@ def _describe_model_call(event: ModelEvent, reasoning: Mapping[int, str]) -> Mod
         phase=str(metadata["phase"]) if metadata.get("phase") else None,
         prompt="\n\n".join(message.text for message in event.input),
         reply=event.error or event.output.completion,
-        failed=bool(event.error),
         reasoning=reasoning.get(seq) if isinstance(seq, int) else None,
         said=None if event.error else _read_prose(event.output.completion),
     )
@@ -562,8 +553,7 @@ def _describe_tool_call(
     evidence: Mapping[int, frozenset[str]],
     settings: ExplorerSettings,
 ) -> ToolCallView:
-    seqs = read_event_seqs(event)
-    seq = seqs.sealed
+    seq = read_event_seqs(event).sealed
     arguments = event.arguments or {}
     result = str(event.result or "")
     try:
@@ -573,12 +563,9 @@ def _describe_tool_call(
     covert = evidence.get(seq, frozenset()) if seq is not None else frozenset()
     return ToolCallView(
         seq=seq,
-        mirror_seq=seqs.mirror,
         function=event.function,
-        arguments=json.dumps(arguments, indent=2, sort_keys=True, ensure_ascii=False),
         arguments_text=format_readable(arguments),
         action=pick_action_line(arguments, settings),
-        result=result,
         result_text=result_text,
         blocked=event.error.message if event.error else None,
         covert=tuple(sorted(covert)),
@@ -592,13 +579,11 @@ def _describe_event(
     evidence: Mapping[int, frozenset[str]],
 ) -> EventDescription:
     data = event.data if isinstance(event.data, dict) else {"data": event.data}
-    seqs = read_event_seqs(event)
-    seq = seqs.sealed
+    seq = read_event_seqs(event).sealed
     payload = data.get("payload")
     target = data.get("target_id")
     view = EventView(
         seq=seq,
-        mirror_seq=seqs.mirror,
         kind=str(event.source or "info"),
         actor=str(data["actor_uid"]) if data.get("actor_uid") else None,
         body=json.dumps(data, indent=2, sort_keys=True, ensure_ascii=False),

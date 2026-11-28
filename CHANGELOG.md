@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [469] - 2026-11-28: The run explorer drops nine page fields nothing reads
+
+### Removed
+
+- The run explorer no longer builds nine page fields that neither its scripts nor any other reader used.
+
 ## [468] - 2026-11-28: The record parsers drop an argument they never read
 
 ### Removed

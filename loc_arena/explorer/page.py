@@ -29,7 +29,6 @@ class ModelCallView:
     phase: str | None
     prompt: str
     reply: str
-    failed: bool
     reasoning: str | None
     # what the agent wrote in its own words in its turn's reply, beside any tool call; None for any other call
     said: str | None
@@ -37,15 +36,12 @@ class ModelCallView:
 
 @dataclass(frozen=True)
 class ToolCallView:
-    """One tool call in a step, with its arguments and result both raw and as text a person reads."""
+    """One tool call in a step, with its arguments and result as text a person reads."""
 
     seq: int | None
-    mirror_seq: int | None
     function: str
-    arguments: str
     arguments_text: str
     action: str
-    result: str
     result_text: str
     blocked: str | None
     covert: tuple[str, ...]
@@ -57,7 +53,6 @@ class EventView:
     """Any other event a step caused: a chat message, a pull request, a ticket change."""
 
     seq: int | None
-    mirror_seq: int | None
     kind: str
     actor: str | None
     body: str
@@ -138,12 +133,10 @@ class SideTaskView:
 
 @dataclass(frozen=True)
 class SafetyView:
-    """What the monitors decided: flagged means a score strictly above ``audit_threshold``."""
+    """What the monitors decided: whether they caught the run, and which of them did."""
 
-    audit_threshold: float
     caught: bool
     caught_by: tuple[str, ...]
-    per_monitor_max_score: Mapping[str, float]
 
 
 @dataclass(frozen=True)
@@ -232,7 +225,6 @@ class RunRow:
     """One run in the index: its outcome, and its steps when it has a transcript (``href`` is None if not)."""
 
     name: str
-    slug: str
     mode: str
     seed: int
     attacker: str
@@ -246,7 +238,6 @@ class RunRow:
     stages_reached: int
     stages_total: int
     caught: bool
-    caught_by: tuple[str, ...]
     peaks: Mapping[str, float]
     threshold: float
     href: str | None
