@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [478] - 2026-11-28: The harness names play folders by their constants
+
+### Changed
+
+- The engine's harness names a run's play folders by the constants the rest of the engine uses, where it repeated their names as strings.
+
 ## [477] - 2026-11-28: Stack runs drop an internal flag they always passed
 
 ### Removed

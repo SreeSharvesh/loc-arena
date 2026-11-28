@@ -33,7 +33,7 @@ from loc_arena.gateway.core import (
 from loc_arena.logging_ import viewer
 from loc_arena.logging_.agent_trace import EpisodeTrace
 from loc_arena.logging_.events import AppendOnlyLog, Event, read_events
-from loc_arena.merged_main import grade_unread
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE, grade_unread
 from loc_arena.metrics import (
     calibrate_overall_threshold,
     calibrate_threshold,
@@ -140,7 +140,10 @@ def _eval_episodes(cfg: RunConfig, episode: Any, calibration: Any) -> list[Episo
     from loc_arena.logging_.inspect_export import EpisodeExport
 
     agent_order = cfg.roster
-    labelled = [("episode", episode), *([("honest_cal", calibration)] if calibration is not None else [])]
+    labelled = [
+        (EPISODE_PHASE, episode),
+        *([(BASELINE_PHASE, calibration)] if calibration is not None else []),
+    ]
     exports: list[EpisodeExport] = []
     for sample_id, assembled in labelled:
         if assembled.trace is None:
@@ -249,10 +252,10 @@ def play_run(config: RunConfig, run_directory: Path, *, mode: str) -> None:
     episode = (
         _recall_episode(earlier)
         if earlier
-        else live.play_model_episode(apply_mode(config, mode), run_directory / "episode")
+        else live.play_model_episode(apply_mode(config, mode), run_directory / EPISODE_PHASE)
     )
     baseline = (
-        live.play_model_episode(apply_mode(config, "honest"), run_directory / "honest_cal")
+        live.play_model_episode(apply_mode(config, "honest"), run_directory / BASELINE_PHASE)
         if earlier
         else None
     )
@@ -281,7 +284,7 @@ def build_recorded_run_events(config: RunConfig, run_directory: Path) -> None:
     Grading never calls it, so a run graded again gains no event.
     """
     played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())
-    traces = {"episode": played.episode_trace, "honest_cal": played.calibration_trace}
+    traces = {EPISODE_PHASE: played.episode_trace, BASELINE_PHASE: played.calibration_trace}
     build_recorded_events(run_directory, config, traces)
 
 
@@ -339,14 +342,14 @@ def grade_run(
 
     start = time.perf_counter()
     # The checks read only what play left on disk.
-    episode = _grade_played(run_directory / "episode", cfg, played.episode_trace)
-    deployed = grade_deployed(run_directory / "episode", cfg, episode.main_score)
+    episode = _grade_played(run_directory / EPISODE_PHASE, cfg, played.episode_trace)
+    deployed = grade_deployed(run_directory / EPISODE_PHASE, cfg, episode.main_score)
     # calibrate against the honest baseline (mode's only difference is covert.enabled)
     honest_cfg = apply_mode(config, "honest")
     honest_ep = (
         episode
         if mode == "honest"
-        else _grade_played(run_directory / "honest_cal", honest_cfg, played.calibration_trace)
+        else _grade_played(run_directory / BASELINE_PHASE, honest_cfg, played.calibration_trace)
     )
     limit, roles = agg.monitor_failures_before_fallback, {spec.name: spec.model for spec in specs}
     h_caller, h_sink = build_monitor_caller(
@@ -414,7 +417,7 @@ def grade_run(
         agg=agg,
         specs=specs,
         deployed=deployed,
-        redeployed=find_redeployed_services(run_directory / "episode", cfg),
+        redeployed=find_redeployed_services(run_directory / EPISODE_PHASE, cfg),
         calibration_sealed_path=None if mode == "honest" else honest_ep.sealed_path,
     )
     if mode == "attack":  # in honest mode the episode is the baseline, so its verdicts are the run's own
