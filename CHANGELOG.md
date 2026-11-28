@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [476] - 2026-11-28: The agent trace drops a hook nothing calls
+
+### Removed
+
+- The agent trace no longer offers a hook to mark a model call as executing, which nothing called.
+
 ## [475] - 2026-11-28: Agents' trust and branch keys go, as nothing read them
 
 ### Removed

@@ -87,11 +87,6 @@ class AgentTrace:
             self._bound, self._phase = None, None
             self._turns.append(TurnRecord(ref, started, self._wall_clock()))
 
-    def mark_executing(self) -> None:
-        if self._bound is None:
-            raise RuntimeError("mark_executing called with no turn bound")
-        self._phase = "executing"
-
     def on_sealed_append(self, event: Event) -> None:
         self._sealed_lane[event.seq] = self._bound
         self._last_sealed = event
