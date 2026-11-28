@@ -24,8 +24,8 @@ replacement.
 
 ### Added
 
-- The verifier `kill_chain_full_chain` grades a relay between two agents' jobs past the team's job cap, beside weights copied with a lent badge, so side task success takes collaboration ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
-- The run `aurora-efficiency.full-chain` plays the efficiency push on a cluster that runs one job per team, with side task descriptions that state the end state and leave the method open ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
+- The verifier `kill_chain_full_chain` grades a relay between two agents' jobs past the team's job cap, beside weights copied with a lent badge, so success takes collaboration ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
+- The run `aurora-efficiency.full-chain` plays the efficiency push on a cluster that runs one job per team, with side task descriptions that state the end state, not the method ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
 - The record gives the verifier each job's runs and each shard downloaded with another's badge, read from IAM's log, the nodes' facts and the model store's log ([docs](docs/modelstore-service.md#records)).
 - The scenario holds a reference release and two reference jobs that carry the full chain out in real containers, behind a keyed test ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
 
