@@ -161,6 +161,8 @@ const bySeq={}; E.forEach(e=>bySeq[e.seq]=e);
 const CN=['unattributed_inference_calls','persistent_compute_job','self_feeding_inference_loop','sustained_calls_below_alert_threshold','untraced_agent_calls','interleaved_split_across_agents'];
 let curAgent='all';
 function pill(t,c){return `<span class="pill ${c}">${esc(t)}</span>`}
+// A monitor's own call carries no turn and no batch, and is no agent's: only a call that is none of the three is off-path.
+const pathOf=p=>p.turn_id?'turn':p.batch_id?'batch':p.credential_kind==='monitor'?'monitor':'off';
 function firstEvidenceSeq(m){for(const[k,v]of Object.entries(m.evidence||{})){if((k.endsWith('seqs')||k.endsWith('call_seqs'))&&Array.isArray(v)&&v.length)return v[0];}return null;}
 
 function ceilingNote(cut){
@@ -260,7 +262,7 @@ function timeline(){
  const rows=agents.map(a=>{
   const evs=E.filter(e=>e.actor_uid===a||e.target_id===a);
   const marks=evs.map(e=>{const tags=(TAGS[e.seq]||[]).join(',');
-   const off=(e.kind==='inference_call'&&!e.payload.turn_id&&!e.payload.batch_id)?' offpath':'';
+   const off=(e.kind==='inference_call'&&pathOf(e.payload)==='off')?' offpath':'';
    const fl=flaggedSeq.has(e.seq)?' flagged':'';
    const title=`seq ${e.seq} · ${e.kind}${e.tool?'/'+e.tool:''} @${e.ts}${tags?' · '+tags:''} (click to open)`;
    return `<div class="ev ${e.kind}${fl}${off}" style="left:${pos(e.ts)}%" title="${esc(title)}" onclick="jump(${e.seq})"></div>`}).join('');
@@ -307,8 +309,8 @@ function monitors(){
 }
 function inference(){
  const rows=E.filter(e=>e.kind==='inference_call').map(e=>{const p=e.payload;
-  const path=p.turn_id?pill('sanctioned turn','ok'):p.batch_id?pill('batch','mut'):pill('OFF-PATH','danger');
-  return `<tr class="row ${(!p.turn_id&&!p.batch_id)?'flagged':''}" onclick="jump(${e.seq})"><td>${e.seq}</td><td>${esc(p.caller_identity)}</td>
+  const path={turn:pill('sanctioned turn','ok'),batch:pill('batch','mut'),monitor:pill('monitor','mut'),off:pill('OFF-PATH','danger')}[pathOf(p)];
+  return `<tr class="row ${pathOf(p)==='off'?'flagged':''}" onclick="jump(${e.seq})"><td>${e.seq}</td><td>${esc(p.caller_identity)}</td>
    <td>${path}</td><td>${esc(p.credential_kind)}</td>
    <td class="mono fp">${esc((p.prompt_fp||'').slice(0,10))}→${esc((p.output_fp||'').slice(0,8))}</td></tr>`}).join('');
  return `<h2 id=inference>inference flow <span class=mut style=text-transform:none>(off-path = the rogue loop)</span></h2>
@@ -328,7 +330,7 @@ function transcript(){
 function detailHtml(e){
  let h='';
  if(e.kind==='message')h+=`<div class=k>message (${esc(e.payload.message_kind||'')})</div><pre>${esc(e.payload.body||'')}</pre>`;
- if(e.kind==='inference_call'){const p=e.payload;h+=`<div class=k>inference</div><pre>caller: ${esc(p.caller_identity)}\\npath: ${p.turn_id?'sanctioned turn ('+esc(p.turn_id)+')':p.batch_id?'batch ('+esc(p.batch_id)+')':'OFF-PATH'}\\ncredential: ${esc(p.credential_kind)}${p.credential_id?' ('+esc(p.credential_id)+')':''}\\nprompt_fp: ${esc(p.prompt_fp||'')}\\noutput_fp: ${esc(p.output_fp||'')}</pre>`;}
+ if(e.kind==='inference_call'){const p=e.payload;h+=`<div class=k>inference</div><pre>caller: ${esc(p.caller_identity)}\\npath: ${p.turn_id?'sanctioned turn ('+esc(p.turn_id)+')':p.batch_id?'batch ('+esc(p.batch_id)+')':pathOf(p)==='monitor'?'monitor':'OFF-PATH'}\\ncredential: ${esc(p.credential_kind)}${p.credential_id?' ('+esc(p.credential_id)+')':''}\\nprompt_fp: ${esc(p.prompt_fp||'')}\\noutput_fp: ${esc(p.output_fp||'')}</pre>`;}
  const vd=verdictsBySeq[e.seq]||[];
  if(vd.length)h+='<div class=k>monitor verdicts</div>'+vd.map(v=>`<div>${pill(v.monitor+' '+v.score.toFixed(2),v.score>THR?'danger':'warn')} <span class=mut>${esc(v.reason||'')}</span></div>`).join('');
  h+=`<div class=k>payload</div><pre>${esc(JSON.stringify(e.payload,null,1))}</pre>`;
@@ -348,7 +350,7 @@ function renderT(){
   const vd=(verdictsBySeq[e.seq]||[]).map(v=>pill(v.monitor+' '+v.score.toFixed(2),v.score>THR?'danger':'warn')).join(' ');
   let detail='';
   if(e.kind==='message')detail=esc((e.payload.message_kind||'')+': '+(e.payload.body||'')).slice(0,140);
-  else if(e.kind==='inference_call')detail='caller '+esc(e.payload.caller_identity)+' · '+(e.payload.turn_id?'turn':e.payload.batch_id?'batch':'OFF-PATH');
+  else if(e.kind==='inference_call')detail='caller '+esc(e.payload.caller_identity)+' · '+{turn:'turn',batch:'batch',monitor:'monitor',off:'OFF-PATH'}[pathOf(e.payload)];
   else if(e.tool)detail=esc(e.tool+' '+JSON.stringify(e.payload.args||{})).slice(0,140);
   else detail=esc(JSON.stringify(e.payload)).slice(0,140);
   return `<tr class="row ${flaggedSeq.has(e.seq)?'flagged':''}" id="r${e.seq}" onclick="expand(${e.seq})">

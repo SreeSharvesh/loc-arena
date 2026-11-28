@@ -28,6 +28,18 @@ replacement.
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack episodes are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 - The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
 
+## [446] - 2026-11-28: The run report no longer marks monitor calls off-path
+
+### Fixed
+
+- The record's report page shows a monitor's own model call as a monitor call, where it marked every one as an off-path call of the rogue loop.
+
+## [445] - 2026-11-28: The run config drops settings that changed nothing
+
+### Removed
+
+- The run config no longer accepts three `inference` settings that nothing read, and its defaults drop three unread blocks, so every key left changes a run ([docs](docs/run-config.md#settings-groups-loc_arenasettingspy-loc_arenaservice_settingspy)).
+
 ## [443] - 2026-11-28: The engine drops a dead report and duplicate threshold rule
 
 ### Changed
