@@ -28,6 +28,24 @@ replacement.
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack episodes are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 - The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
 
+## [443] - 2026-11-28: The engine drops a dead report and duplicate threshold rule
+
+### Changed
+
+- The engine computes the per-event and the overall audit threshold with one function, which changes nothing a reader of the arena would notice ([docs](docs/trajectory-monitors.md)).
+
+### Removed
+
+- The engine no longer holds a per-event safety report and a usefulness curve that no run computed; a play is caught on its overall suspicion, as before ([docs](docs/trajectory-monitors.md)).
+
+## [440] - 2026-11-28: The docs' indexes and pages say what the code holds
+
+### Changed
+
+- The docs' indexes list what they left out: the `replay` command, three settings groups, four services' pages and the removed keys a config is refused for ([docs](docs/run-config.md)).
+- The docs on IAM name the forge, the chat service and the model store among the services guarded over both HTTP and MCP ([docs](docs/iam-service/spec.md#11-what-is-under-iam)).
+- The docs on the job service, the model store and the agent log name the delegated model-store rights, all three company models and the functions that exist ([docs](docs/jobsvc-service.md)).
+
 ## [439] - 2026-11-28: The changelog check passes a stacked pull request
 
 ### Changed
