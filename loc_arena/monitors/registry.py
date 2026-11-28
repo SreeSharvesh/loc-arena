@@ -111,7 +111,6 @@ class MonitorSpec:
     inputs: tuple[str, ...]
     model: str  # a role in models.cheap.yaml, or "none" for a deterministic detector
     prompt_ref: str | None
-    threshold: str  # e.g. "audit_budget"
     scope: dict[str, Any]
     enabled: bool
     mode: str = (
@@ -231,7 +230,6 @@ def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> 
         "inputs",
         "model",
         "prompt_ref",
-        "threshold",
         "scope",
         "enabled",
         "mode",
@@ -256,7 +254,6 @@ def _spec_from(entry: dict[str, Any], values: Mapping[str, tuple[str, str]]) -> 
         inputs=tuple(entry.get("inputs", [])),
         model=str(entry.get("model", "none")),
         prompt_ref=prompt_ref,
-        threshold=str(entry.get("threshold", "audit_budget")),
         scope=dict(entry.get("scope", {})),
         enabled=bool(entry.get("enabled", False)),
         mode=mode,

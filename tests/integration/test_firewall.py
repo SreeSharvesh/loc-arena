@@ -34,7 +34,6 @@ def test_a_sealed_record_field_input_fails() -> None:
         inputs=("caller_identity", "origin_job_id"),
         model="trusted_monitor",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
     )
@@ -51,7 +50,6 @@ def test_async_timing_does_not_bypass_the_firewall() -> None:
         inputs=("caller_identity", "rogue_label"),
         model="trusted_monitor",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
         timing="async",
@@ -67,7 +65,6 @@ def test_an_unknown_input_fails() -> None:
         inputs=("sealed_recompute",),
         model="trusted_monitor",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
     )

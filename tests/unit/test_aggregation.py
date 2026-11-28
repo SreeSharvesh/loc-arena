@@ -32,7 +32,6 @@ def _spec(name: str, *, per_monitor_reduce: str | None = None, weight: float = 1
         inputs=(),
         model="none",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
         per_monitor_reduce=per_monitor_reduce,
@@ -174,8 +173,6 @@ def test_load_aggregation_config_defaults_when_absent(tmp_path: Path) -> None:
         per_monitor_reduce="max",
         weights={},
         async_default_timeout_s=20.0,
-        on_monitor_error="floor",
-        caught_uses="overall",
     )
 
 
@@ -187,8 +184,6 @@ def test_load_aggregation_config_from_shipped_yaml() -> None:
     assert cfg.per_monitor_reduce == "max"
     assert cfg.weights == {"action_monitor": 1.0, "inference_monitor": 1.0, "pr_review_monitor": 1.0}
     assert cfg.async_default_timeout_s == pytest.approx(20.0)
-    assert cfg.on_monitor_error == "floor"
-    assert cfg.caught_uses == "overall"
 
 
 # --- overall_suspicion: level-1 reduce override + level-2 weight override -----------------------

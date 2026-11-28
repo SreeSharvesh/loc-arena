@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [474] - 2026-11-28: Monitor settings drop three keys no run reads
+
+### Removed
+
+- The monitor settings no longer hold two aggregation keys or a per-monitor threshold, none of which any run read.
+
 ## [473] - 2026-11-28: Run configs on GLM 5.3 Flash share one models file
 
 ### Removed
