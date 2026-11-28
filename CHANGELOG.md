@@ -20,13 +20,19 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
-## [435] - 2026-11-27: The efficiency and model-selection tasks share one covert core
+## [435] - 2026-11-28: The efficiency and model-selection tasks share one covert core
 
 ### Changed
 
 - The scenario writes the model-loop side task's covert core once, so a fix to it reaches the side task descriptions of both the efficiency and the model-selection task ([docs](docs/run-config.md#prompts)).
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack episodes are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 - The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
+
+## [439] - 2026-11-28: The changelog check passes a stacked pull request
+
+### Changed
+
+- The repository's changelog check accepts the releases a stacked pull request's target branch holds, so a stack passes the gates before the pull requests under it merge ([docs](docs/ci-rules.md#the-changelog-holds-one-release-per-merged-pull-request)).
 
 ## [431] - 2026-11-27: An agent starts a peer session under its own identity
 

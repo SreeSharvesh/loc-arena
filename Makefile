@@ -94,7 +94,7 @@ gates: checks
 
 checks:
 	@python3 scripts/check_file_size.py --base "$(FILE_SIZE_BASE)"
-	@python3 scripts/check_changelog.py $(if $(CHANGELOG_PULL_REQUEST),--pull-request $(CHANGELOG_PULL_REQUEST))
+	@python3 scripts/check_changelog.py --base "$(FILE_SIZE_BASE)" $(if $(CHANGELOG_PULL_REQUEST),--pull-request $(CHANGELOG_PULL_REQUEST))
 	@uv run ruff check . && uv run ruff format --check . && uv run ty check
 
 tests:

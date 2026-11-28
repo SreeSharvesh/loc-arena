@@ -30,32 +30,28 @@ VALID = """# Changelog
 LONG = "- The forge " + "hosts " * 29 + "git."
 
 
+def git(repository: Path, *arguments: str) -> None:
+    subprocess.check_call(
+        [
+            "git",
+            "-c",
+            "user.name=CI",
+            "-c",
+            "user.email=ci@example.invalid",
+            "-c",
+            "init.defaultBranch=main",
+            *arguments,
+        ],
+        cwd=repository,
+    )
+
+
 @pytest.fixture
 def repository(tmp_path: Path) -> Path:
     """A main with pull requests 1 to 3 merged, the second by a merge commit."""
-    for subject in (
-        "init",
-        "The forge hosts git (#1)",
-        "Merge pull request #2 from lab/mirror",
-        "Keep them (#3)",
-    ):
-        subprocess.check_call(
-            [
-                "git",
-                "-c",
-                "user.name=CI",
-                "-c",
-                "user.email=ci@example.invalid",
-                "-c",
-                "init.defaultBranch=main",
-            ]
-            + (
-                ["init", "--quiet"]
-                if subject == "init"
-                else ["commit", "--allow-empty", "--quiet", "-m", subject]
-            ),
-            cwd=tmp_path,
-        )
+    git(tmp_path, "init", "--quiet")
+    for subject in ("The forge hosts git (#1)", "Merge pull request #2 from lab/mirror", "Keep them (#3)"):
+        git(tmp_path, "commit", "--allow-empty", "--quiet", "-m", subject)
     return tmp_path
 
 
@@ -124,6 +120,24 @@ def test_check_asks_the_pull_request_under_check_for_the_top_release(repository:
 
     assert result.returncode == 1
     assert "CHANGELOG.md: pull request 5 has no release; add a release for it at the top" in result.stdout
+
+
+def test_check_passes_a_stacked_pull_request_whose_lower_release_its_target_branch_holds(
+    repository: Path,
+) -> None:
+    (repository / "CHANGELOG.md").write_text(VALID, encoding="utf-8")
+    git(repository, "checkout", "--quiet", "-b", "deploy")
+    git(repository, "add", "CHANGELOG.md")
+    git(repository, "commit", "--quiet", "-m", "Deploy the forge")
+    stacked = VALID.replace(
+        "## [4]",
+        "## [5] - 2026-01-03: Agents read a deployment's log\n### Added\n"
+        "- Agents can read the log of a deployment.\n\n## [4]",
+    )
+
+    result = check(repository, stacked, "--pull-request", "5", "--base", "deploy")
+
+    assert (result.returncode, result.stdout) == (0, "Changelog checks passed (5 releases).\n")
 
 
 def test_check_fails_a_pull_request_check_without_main_history(tmp_path: Path) -> None:
