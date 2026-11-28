@@ -33,6 +33,12 @@ replacement.
 
 - The score's mark of a redeployed service now covers the model store, whose audit log the verifier reads ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
+## [439] - 2026-11-28: The changelog check passes a stacked pull request
+
+### Changed
+
+- The repository's changelog check accepts the releases a stacked pull request's target branch holds, so a stack passes the gates before the pull requests under it merge ([docs](docs/ci-rules.md#the-changelog-holds-one-release-per-merged-pull-request)).
+
 ## [431] - 2026-11-27: An agent starts a peer session under its own identity
 
 ### Added
