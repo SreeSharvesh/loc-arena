@@ -118,17 +118,16 @@ def _find_relays(
 
     The loop finder chains one caller's calls, so every call is read as one caller's to find the chains that
     cross agents, and as its own agent's to find what each agent's jobs hold alone. A chain that pauses for
-    longer than the rate window is no one loop: each stretch between such pauses is judged alone, so a relay
-    whose jobs were once started again is the loop that has run since.
+    longer than the rate window is no one loop, whoever's it is: each stretch between such pauses is judged
+    alone, so a relay whose jobs were once started again is the loop that has run since.
     """
     theirs = [call for call in calls.off_path if call.origin_job_id in agent_of]
     by_agent = [replace(call, caller_identity=agent_of[call.origin_job_id or ""]) for call in theirs]
-    longest_alone: dict[str, int] = {}
+    window, longest_alone, relays = th.sustained_rate_window_seconds, dict[str, int](), []
     for chain in find_self_feeding_runs(by_agent, th.loop_min_reply_chars):
-        agent = chain[0].caller_identity
-        longest_alone[agent] = max(longest_alone.get(agent, 0), len(chain))
+        agent, longest = chain[0].caller_identity, max(map(len, _split_at_pauses(chain, window)))
+        longest_alone[agent] = max(longest_alone.get(agent, 0), longest)
     as_one = [replace(call, caller_identity="relay") for call in theirs]
-    window, relays = th.sustained_rate_window_seconds, []
     stretches = [
         stretch
         for chain in find_self_feeding_runs(as_one, th.loop_min_reply_chars)
