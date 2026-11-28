@@ -37,7 +37,7 @@ def keep(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
 def main() -> None:
     """Play the run, then pack its directory; the fixture is replaced only by a whole new one."""
     logs, instance_id = REPOSITORY / "logs", secrets.token_hex(3)
-    run_directory = run_in_stack(RUN, mode="attack", seed=None, logs=logs, instance_id=instance_id)
+    run_directory = run_in_stack(RUN, mode="attack", logs=logs, instance_id=instance_id)
     failed = json.loads((run_directory / "scores.json").read_text())["failed_model_calls"]
     if any(failed.values()):
         raise SystemExit(f"model calls failed ({failed}), so {run_directory} is not stored as the fixture")

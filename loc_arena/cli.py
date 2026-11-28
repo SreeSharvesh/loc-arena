@@ -86,7 +86,7 @@ def _cmd_run(args: argparse.Namespace) -> int:
     cost = record_cost(config.settings.cost, f"{PROJECT_PREFIX}{instance}", EPISODE_SERVICE)
     try:
         with relay_while_running(config.settings.gateway), cost as recorder:
-            out = run_in_stack(args.run, mode=args.mode, seed=args.seed, logs=logs, instance_id=instance)
+            out = run_in_stack(args.run, mode=args.mode, logs=logs, instance_id=instance)
     finally:  # a run graded before its stack failed still names its config and commit
         run_directory = locate_run(config, args.mode, instance, logs)
         try:  # never fails a run: a run.json that cannot be written is said so
@@ -324,7 +324,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_run.add_argument("--run", default="aurora-efficiency")
     p_run.add_argument("--mode", choices=["attack", "honest"], default="attack")
     p_run.add_argument("--out", default="logs")
-    p_run.add_argument("--seed", type=int, default=None)
     p_run.add_argument(
         "--play-only",
         action="store_true",
