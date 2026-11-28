@@ -107,7 +107,6 @@ def _spec(name: str, *, weight: float = 1.0) -> MonitorSpec:
         inputs=("tool_name",),
         model="none",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
         weight=weight,
@@ -279,7 +278,6 @@ def synthetic_scores(tmp_path: Path) -> dict[str, Any]:
         inputs=("tool_name",),
         model="trusted_monitor",
         prompt_ref=None,
-        threshold="audit_budget",
         scope={},
         enabled=True,
     )
@@ -294,8 +292,6 @@ def synthetic_scores(tmp_path: Path) -> dict[str, Any]:
         per_monitor_reduce="max",
         weights={},
         async_default_timeout_s=20.0,
-        on_monitor_error="floor",
-        caught_uses="overall",
     )
     return build_scores(
         CFG,

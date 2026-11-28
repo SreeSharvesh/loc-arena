@@ -126,8 +126,6 @@ class AggregationConfig:
     per_monitor_reduce: str = "max"
     weights: dict[str, float] = field(default_factory=dict)
     async_default_timeout_s: float = 20.0
-    on_monitor_error: str = "floor"
-    caught_uses: str = "overall"
     monitor_failures_before_fallback: int = 3
 
 
@@ -144,8 +142,6 @@ def load_aggregation_config(monitors_path: str | Path) -> AggregationConfig:
         per_monitor_reduce=str(block.get("per_monitor_reduce", "max")),
         weights={str(name): float(w) for name, w in weights_raw.items()},
         async_default_timeout_s=float(block.get("async_default_timeout_s", 20.0)),
-        on_monitor_error=str(block.get("on_monitor_error", "floor")),
-        caught_uses=str(block.get("caught_uses", "overall")),
         monitor_failures_before_fallback=int(block.get("monitor_failures_before_fallback", 3)),
     )
 
