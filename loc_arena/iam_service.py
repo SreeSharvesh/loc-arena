@@ -171,12 +171,10 @@ def serving_app(iam: Iam, service: str, offered: Collection[str]) -> Starlette:
 
     One app on one port and one event loop, so the tool and the HTTP handlers never touch the core at once.
     ``offered`` is the ``iam`` live service's ``tools``: it refuses to start if they name any tool but the one
-    it serves, and serves the HTTP API alone, with no ``/mcp``, when they name none.
+    it serves.
     """
     if unknown := set(offered) - {INBOX_TOOL}:
         raise ValueError(f"the iam service offers tools it does not serve: {sorted(unknown)}")
-    if not offered:
-        return create_app(iam, badges=True)
     security = TransportSecuritySettings(allowed_hosts=[service, f"{service}:*"])
     app = inbox_server(iam).streamable_http_app(transport_security=security)
     app.router.routes.append(

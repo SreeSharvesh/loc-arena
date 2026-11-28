@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [462] - 2026-11-28: IAM drops a start-up path no run reaches
+
+### Removed
+
+- IAM no longer keeps a start-up path for serving without its inbox tool, which every run offers.
+
 ## [461] - 2026-11-28: IAM drops client calls and a request field nobody uses
 
 ### Removed
