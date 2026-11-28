@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [473] - 2026-11-28: Run configs on GLM 5.3 Flash share one models file
+
+### Removed
+
+- The run configs on GLM 5.3 Flash read one models file, where two identical files served one each.
+
 ## [472] - 2026-11-28: IAM tests share their serve and text helpers
 
 ### Changed
