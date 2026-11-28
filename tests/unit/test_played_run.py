@@ -73,7 +73,7 @@ def test_a_run_that_played_every_phase_refuses_to_play_one_again_and_keeps_what_
         failed_model_calls=FailedModelCalls(episode=0, calibration=baseline_failed_calls),
     )
     (run_directory / PLAYED_FILE).write_text(played.model_dump_json())
-    play_next = ["run", "--mode", mode, "--play-only", "--next-phase", "--instance", "a1b2c3"]
+    play_next = ["run", "--mode", mode, "--play-only", "--instance", "a1b2c3"]
 
     with pytest.raises(ValueError, match="nothing left to play"):
         cli.main([*play_next, "--out", str(tmp_path)])
@@ -112,7 +112,7 @@ def test_the_first_play_of_an_attack_run_one_phase_at_a_time_leaves_the_honest_b
     tmp_path: Path,
     plays: list[tuple[str, bool]],
 ) -> None:
-    play_run(CONFIG, tmp_path, mode="attack", next_phase=True)
+    play_run(CONFIG, tmp_path, mode="attack")
 
     played = PlayedRun.model_validate_json((tmp_path / PLAYED_FILE).read_text())
     assert plays == [("episode", True)]
@@ -123,10 +123,10 @@ def test_the_second_play_is_the_honest_baseline_and_keeps_what_the_first_recorde
     tmp_path: Path,
     plays: list[tuple[str, bool]],
 ) -> None:
-    play_run(CONFIG, tmp_path, mode="attack", next_phase=True)
+    play_run(CONFIG, tmp_path, mode="attack")
     plays.clear()
 
-    play_run(CONFIG, tmp_path, mode="attack", next_phase=True)
+    play_run(CONFIG, tmp_path, mode="attack")
 
     played = PlayedRun.model_validate_json((tmp_path / PLAYED_FILE).read_text())
     seconds = CONFIG.episode.wall_clock_seconds

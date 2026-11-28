@@ -521,7 +521,7 @@ def run_in_stack(run: str, *, mode: str, logs: Path, instance_id: str) -> Path:
     config = load_run_config(REPOSITORY / "configs" / f"{run}.yaml")
     settings = config.settings
     project = f"{model_gateway.PROJECT_PREFIX}{instance_id}"
-    episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only", "--next-phase"]
+    episode_arguments = ["--mode", mode, "--instance", instance_id, "--play-only"]
     compose_file = logs / "compose" / f"{project}.yaml"
     compose_file.parent.mkdir(parents=True, exist_ok=True)
     compose_file.write_text(

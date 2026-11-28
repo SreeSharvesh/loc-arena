@@ -232,28 +232,18 @@ def locate_run(config: RunConfig, mode: str, instance_id: str, out_root: Path) -
     return out_root.resolve() / config.run_slug / config.run_name(mode, instance_id)
 
 
-def play_run(
-    config: RunConfig,
-    run_directory: Path,
-    *,
-    mode: str,
-    next_phase: bool = False,
-) -> None:
-    """Play the episode in ``mode`` and, in attack mode, its baseline; leave what grading needs on disk.
+def play_run(config: RunConfig, run_directory: Path, *, mode: str) -> None:
+    """Play the first phase of the ``mode`` run that ``played.json`` lacks; leave what grading needs on disk.
 
-    The episode plays in ``run_directory/episode`` and the baseline in ``run_directory/honest_cal``, each
-    leaving its ``snapshot.json``; ``played.json`` at the root holds the play time and the per-agent traces.
-    With ``next_phase`` only the first phase ``played.json`` lacks plays, so a stack run can renew its
-    services before the baseline; with none left, it raises ``ValueError``.
+    The episode plays in ``run_directory/episode`` and, in attack mode, the baseline then plays in
+    ``run_directory/honest_cal``, each leaving its ``snapshot.json``; ``played.json`` at the root holds the
+    play time and the per-agent traces. One phase a call lets a stack run renew its services before the
+    baseline; with none left, it raises ``ValueError``.
     """
     run_directory.mkdir(parents=True, exist_ok=True)
     start = time.perf_counter()
     played_file = run_directory / PLAYED_FILE
-    earlier = (
-        PlayedRun.model_validate_json(played_file.read_text())
-        if next_phase and played_file.exists()
-        else None
-    )
+    earlier = PlayedRun.model_validate_json(played_file.read_text()) if played_file.exists() else None
     if earlier and (mode == "honest" or earlier.failed_model_calls.calibration is not None):
         raise ValueError(f"{run_directory} has played every phase of its {mode} run: nothing left to play")
     episode = (
@@ -262,9 +252,9 @@ def play_run(
         else live.play_model_episode(apply_mode(config, mode), run_directory / "episode")
     )
     baseline = (
-        None
-        if mode == "honest" or (next_phase and not earlier)
-        else live.play_model_episode(apply_mode(config, "honest"), run_directory / "honest_cal")
+        live.play_model_episode(apply_mode(config, "honest"), run_directory / "honest_cal")
+        if earlier
+        else None
     )
     played = PlayedRun(
         play_seconds=time.perf_counter() - start + (earlier.play_seconds if earlier else 0),
