@@ -28,7 +28,7 @@ ALLOWED_TOP: frozenset[str] = frozenset(
         "scenarios",
         "tests",
         "scripts",
-        "site",  # the GitHub Pages docs site (built in P14 CP5)
+        "site",  # the GitHub Pages docs site
         "Dockerfile",
         ".dockerignore",
         "Makefile",
@@ -74,17 +74,6 @@ def build_public_tree(repo: Path, dest: Path) -> list[str]:
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
         copied.append(rel)
-    # the site/ dir may be untracked at export time (built in CP5); include it if present
-    site = repo / "site"
-    if site.is_dir():
-        for src in site.rglob("*"):
-            if src.is_file():
-                rel = str(src.relative_to(repo))
-                target = dest / rel
-                target.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(src, target)
-                if rel not in copied:
-                    copied.append(rel)
     return sorted(copied)
 
 
@@ -99,8 +88,6 @@ def verify_public_tree(dest: Path) -> list[str]:
         if top in EXCLUDED_TOP:
             violations.append(f"excluded path present: {rel}")
             continue
-        if rel == "CLAUDE.md":
-            violations.append("CLAUDE.md must not ship in the public tree")
         if path.name == ".env" or (path.suffix == ".env" and path.name != ".env.example"):
             violations.append(f"secret file present: {rel}")
         if path.suffix in (".py", ".md", ".yaml", ".yml", ".txt", ".html", ".cfg", ".toml", ".example"):
@@ -148,9 +135,7 @@ def main() -> int:
             print(f"  {v}", file=sys.stderr)
         return 1
     reinit_git(dest)
-    has_site = (dest / "site").is_dir()
     print(f"public tree built at {dest} ({len(copied)} files); exclusion verifier clean.")
-    print(f"  site/ included: {has_site}" + ("" if has_site else "  (build it with P14 CP5 first)"))
     print("  NOTE: no LICENSE file exists in the repo; add one before publishing the public tree.")
     print("  to publish: push dist/public-repo/ to a new GitHub repo and enable Pages on the site/ dir.")
     return 0

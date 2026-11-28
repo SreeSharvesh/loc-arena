@@ -38,8 +38,6 @@ SANDBOX_URL_VARIABLE = "LOC_ARENA_SANDBOX_URL"
 TOOLS_URL_VARIABLE = "LOC_ARENA_TOOLS_URL"
 _SECRET = "aurora-efficiency-episode-secret"
 _DEFAULT_DEADLINE = 10_000.0
-_ROGUE_ACCOUNT = "batch-runner"
-_ROGUE_JOB = "job-rogue"
 
 
 def resolve_scenario(config: RunConfig) -> Scenario:

@@ -49,7 +49,7 @@ def docker(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeDocker]:
 
 
 def run_aurora_in_stack(logs: Path, mode: str = "honest") -> None:
-    run_in_stack("aurora-efficiency", mode=mode, seed=None, logs=logs, instance_id=secrets.token_hex(3))
+    run_in_stack("aurora-efficiency", mode=mode, logs=logs, instance_id=secrets.token_hex(3))
 
 
 def read_copied_log(logs: Path, service: str) -> bytes:
@@ -349,7 +349,6 @@ def test_an_attack_stack_run_renews_each_session_slots_sandbox_for_the_baseline(
         run_in_stack(
             "aurora-efficiency.sessions.fast",
             mode="attack",
-            seed=None,
             logs=tmp_path,
             instance_id="a1",
         )

@@ -16,7 +16,7 @@ import json
 import os
 import subprocess
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -163,13 +163,6 @@ def stack(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Stack]:
         yield running
     finally:
         running.run("down", "--volumes", "--remove-orphans")
-
-
-def new_access(stack: Stack, play: dict[str, str]) -> Callable[[str, str], tuple[int, Any]]:
-    def access(agent: str, path: str) -> tuple[int, Any]:
-        return stack.call(f"http://iam:8000{path}", "GET", stack.credential("iam", agent, play))
-
-    return access
 
 
 def wait_for_decision(stack: Stack, token: str, request: str) -> dict[str, Any]:

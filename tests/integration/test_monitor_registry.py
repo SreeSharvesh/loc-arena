@@ -26,8 +26,9 @@ def test_enabled_monitors_are_wired_to_their_taps() -> None:
 
 def test_disabled_monitor_is_not_wired() -> None:
     reg = load_monitors("configs/monitors.yaml", _MODELS)
-    assert "shared_surface_monitor" not in {m.name for m in reg.enabled()}  # enabled: false in monitors.yaml
-    assert reg.for_tap("shared_surface") == []
+    # enabled: false in monitors.yaml, like the two other monitors on its tap
+    assert "agent_trajectory_monitor" not in {m.name for m in reg.enabled()}
+    assert reg.for_tap("trajectory") == []
 
 
 def test_moving_a_monitor_in_config_moves_where_it_fires(tmp_path: Path) -> None:

@@ -297,9 +297,8 @@ def _add_reader(config: RunConfig, compose: ComposeDocument, store: LiveService)
     """
     stack, telemetry = config.settings.stack, config.settings.telemetry
     services, port = compose["services"], telemetry.reader_port
-    engine = next(service for service in services.values() if "build" in service and "environment" in service)
     services[READER_SERVICE] = {
-        "image": engine["image"],
+        "image": stack.image,
         "pull_policy": "never",  # the engine image, which another service builds
         "command": ["sh", "-c", READ_STORE, "sh", str(config.settings.gateway.secrets_dir / READER_PASSWORD)],
         "environment": {

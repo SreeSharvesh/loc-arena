@@ -12,8 +12,6 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
-from fastapi import FastAPI
-
 from loc_arena.gateway.core import (
     BatchGenerateRequest,
     BatchGenerateResponse,
@@ -110,18 +108,3 @@ class GatewayEdge:
                 model_role=req.role,
             )
         return resp
-
-
-def create_edge_app(edge: GatewayEdge) -> FastAPI:
-    """Wire the edge's endpoints onto a FastAPI app (what the agents point at)."""
-    app = FastAPI(title="loc-arena gateway edge")
-
-    @app.post("/generate", response_model=GenerateResponse)
-    def _generate(req: GenerateRequest) -> GenerateResponse:
-        return edge.generate(req)
-
-    @app.post("/batch_generate", response_model=BatchGenerateResponse)
-    def _batch_generate(req: BatchGenerateRequest) -> BatchGenerateResponse:
-        return edge.batch_generate(req)
-
-    return app

@@ -10,10 +10,6 @@ from loc_arena.logging_.events import AppendOnlyLog, Event, EventKind
 from loc_arena.scaffold.bus import Recorder
 
 
-def test_constructs_with_an_injected_wall_clock() -> None:
-    AgentTrace(wall_clock=lambda: 1.0)
-
-
 def test_finish_on_an_empty_trace_returns_empty_collections_and_the_boundary() -> None:
     trace = AgentTrace().finish(last_sealed_seq=7)
     assert trace.turns == ()

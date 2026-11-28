@@ -44,6 +44,7 @@ from loc_arena.metrics import (
 from loc_arena.monitors.aggregation import load_aggregation_config
 from loc_arena.monitors.registry import (
     ModelCallsStoppedError,
+    _noop_sink,
     load_monitor_specs,
     load_monitors,
 )
@@ -64,10 +65,6 @@ if TYPE_CHECKING:
 MONITORS_FILE: Final = "configs/monitors.yaml"  # the monitors a run is graded with
 
 
-def _default_sink(kind: str, payload: dict[str, Any]) -> None:
-    """Default monitor event sink (drops the event) when no sealed sink is wired."""
-
-
 # --------------------------------------------------------------------------------------------------------
 # Run an episode in a MODE, grade it, and write the reproducible per-run audit bundle
 # --------------------------------------------------------------------------------------------------------
@@ -82,11 +79,6 @@ def apply_mode(config: RunConfig, mode: str) -> RunConfig:
     return dataclasses.replace(config, covert=dataclasses.replace(config.covert, enabled=mode == "attack"))
 
 
-def _default_decisions_text(cfg: RunConfig, mode: str, seed: int) -> str:
-    """The default ``decisions.md`` body written into a run bundle."""
-    return f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\n"
-
-
 def _write_bundle(
     cfg: RunConfig,
     out_dir: Path,
@@ -98,23 +90,19 @@ def _write_bundle(
     threshold: float,
     *,
     write_report: bool = True,
-    decisions_text: str | None = None,
     calibration: Any = None,
 ) -> Path:
     """Write the reproducible audit bundle into ``out_dir`` and return it.
 
     Seven files always; with ``logging.agent_transcript`` on, the ``.eval`` is a real Inspect log and
     ``transcript.html`` / ``transcript.txt`` are added, written last.
-
-    Passing no ``decisions_text`` uses the standard run notes.
     """
     (out_dir / "config.resolved.yaml").write_text(yaml.safe_dump({**cfg.raw, "seed": seed}, sort_keys=False))
     shutil.copy(episode.sealed_path, out_dir / "events.sealed.jsonl")
     shutil.copy(episode.mirror_path, out_dir / "events.mirror.jsonl")
     (out_dir / "scores.json").write_text(json.dumps(with_deprecated_keys(scores), indent=2))
-    (out_dir / "decisions.md").write_text(
-        decisions_text if decisions_text is not None else _default_decisions_text(cfg, mode, seed),
-    )
+    notes = f"# Run notes\n\nrun_slug: {cfg.run_slug}\nmode: {mode}\nseed: {seed}\n"
+    (out_dir / "decisions.md").write_text(notes)
     if write_report:
         report = viewer.build_report(cfg, scores, out_dir / "events.sealed.jsonl", threshold)
         (out_dir / "report.html").write_text(report)
@@ -333,14 +321,13 @@ def grade_run(
     run_directory: Path,
     *,
     mode: str,
-    seed: int | None = None,
     monitors_path: str = MONITORS_FILE,
     write_report: bool = True,
     monitor_provider: Any = None,
 ) -> Path:
     """Grade what ``play_run`` left in ``run_directory``, replay the monitors, and write the bundle there.
 
-    ``mode`` and ``seed`` come from the caller, never from the played files. The run is named after its
+    ``mode`` comes from the caller, never from the played files. The run is named after its
     directory. Without a ``monitor_provider``, the monitors call the gateway or the key this process has;
     with neither, they score with their heuristic.
     """
@@ -350,7 +337,6 @@ def grade_run(
             timeout=cfg.settings.gateway.timeout_seconds,
             model_providers=cfg.model_providers,
         )
-    the_seed = seed if seed is not None else cfg.seed
     run_name = run_directory.name
     played = PlayedRun.model_validate_json((run_directory / PLAYED_FILE).read_text())
 
@@ -392,7 +378,7 @@ def grade_run(
         honest_cfg,
         proto,
         model_caller=h_caller,
-        event_sink=h_sink or _default_sink,
+        event_sink=h_sink or _noop_sink,
     )
     # In honest mode the episode IS the calibration baseline; score it ONCE and reuse that record, so a live
     # monitor's nondeterminism between two independent scorings cannot make the honest baseline caught against
@@ -401,7 +387,7 @@ def grade_run(
     ep_rec = (
         honest_rec
         if mode == "honest"
-        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _default_sink)
+        else record_episode(episode, cfg, proto, model_caller=e_caller, event_sink=e_sink or _noop_sink)
     )
     # Per-event threshold: reported as safety.audit_threshold, the score above which the run explorer, the
     # run reader and the replay export call a single verdict flagged.
@@ -426,7 +412,7 @@ def grade_run(
         cfg,
         mode,
         run_name,
-        the_seed,
+        cfg.seed,
         wall_clock,
         episode,
         ep_rec,
@@ -454,7 +440,7 @@ def grade_run(
         run_name,
         scores,
         episode,
-        the_seed,
+        cfg.seed,
         mode,
         threshold,
         write_report=write_report,

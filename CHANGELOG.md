@@ -28,6 +28,78 @@ replacement.
 - The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack episodes are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
 - The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
 
+## [458] - 2026-11-28: The repository drops a duplicate run script
+
+### Removed
+
+- The repository loses a script that repeated the run command, and its public tree no longer takes untracked files from the site folder ([docs](README.md)).
+
+## [457] - 2026-11-28: The monitor config holds no key that changes nothing
+
+### Removed
+
+- The run config and the monitors file lose seven keys nothing read, one of which seemed to choose a run's monitors; an entry's own flag does ([docs](docs/run-config.md)).
+
+## [456] - 2026-11-28: The run explorer's two pages share one stylesheet
+
+### Changed
+
+- The run explorer's index page takes its styles from the stylesheet the run page uses, where it held a copy nine rules behind; it looks the same ([docs](docs/explorer/README.md)).
+
+## [455] - 2026-11-28: The telemetry reader runs in the engine image by name
+
+### Fixed
+
+- The stack runs the telemetry store's reader in the engine image by name, where it took the first built service's image and could pick a scenario's own ([docs](docs/telemetry-service.md)).
+
+## [454] - 2026-11-28: A run is graded with the monitors file it names
+
+### Fixed
+
+- The run is checked and graded with the monitors file its config names in `protocol.monitors_config`, where both always read the default file ([docs](docs/run-config.md)).
+
+## [453] - 2026-11-28: A run's bundle names the seed its play used
+
+### Fixed
+
+- The run command drops `--seed`, which labelled the bundle with a seed the play never used; a run's seed is its config's ([docs](docs/run-config.md)).
+
+## [452] - 2026-11-28: The model gateway drops a transport nothing used
+
+### Removed
+
+- The model gateway's Python side loses the network transport and the edge app of the removed in-sandbox client, which changes nothing a reader of the arena would notice.
+
+## [451] - 2026-11-28: The engine drops three options nobody chose
+
+### Changed
+
+- The engine's checkout seeding, play and bundle writing lose a parameter each that no caller passed, which changes nothing a reader of the arena would notice.
+
+## [450] - 2026-11-28: The engine drops constants nothing read
+
+### Removed
+
+- The engine loses three constants and a duplicate helper that nothing read, which changes nothing a reader of the arena would notice.
+
+## [449] - 2026-11-28: The tests drop helpers and a marker nothing used
+
+### Removed
+
+- The repository's tests lose three helpers and a pytest marker that nothing used, which changes nothing a reader of the arena would notice.
+
+## [448] - 2026-11-28: Four tests that could not fail now can
+
+### Changed
+
+- The repository's tests no longer hold four that passed whatever the code did, which changes nothing a reader of the arena would notice.
+
+## [447] - 2026-11-28: The run report lists the stages of any kill chain
+
+### Fixed
+
+- The record's report page lists the stages of the run's own kill chain, where it showed the job loop's alone and wrote a standing-agent run's depth out of four.
+
 ## [446] - 2026-11-28: The run report no longer marks monitor calls off-path
 
 ### Fixed

@@ -286,6 +286,25 @@ def test_a_monitors_own_model_call_is_not_shown_as_off_path(tmp_path: Path) -> N
 
 
 @needs_node
+def test_the_kill_chain_story_lists_the_stages_of_the_runs_own_verifier(tmp_path: Path) -> None:
+    standing_agent = ("rogue_agent_registered", "scheduled_persistence", "unobserved_rogue_agent")
+    scores = _new_schema_scores()
+    scores["side_task"] = {
+        "success": True,
+        "stages_reached": 3,
+        "stages": {name: {"reached": True, "sealed": True, "evidence": {}} for name in standing_agent},
+    }
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    page = _render(build_report(config, scores, _sealed_log(tmp_path), threshold=0.5), tmp_path)
+
+    assert [name for name in standing_agent if f'<span class="pill danger">{name}</span>' in page] == [
+        *standing_agent,
+    ]
+    assert "<div class=l>stages reached</div><div class=v>3</div>" in page
+
+
+@needs_node
 def test_the_report_script_parses(tmp_path: Path) -> None:
     """A syntax error in the report's script leaves the page blank, so node must parse it."""
     config = load_run_config("configs/aurora-efficiency.yaml")

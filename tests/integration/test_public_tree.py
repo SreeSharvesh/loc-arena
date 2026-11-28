@@ -1,4 +1,4 @@
-"""P14 CP4: the curated public tree excludes prompts and internal docs; it keeps the code and the site.
+"""The curated public tree excludes prompts and internal docs; it keeps the code and the site.
 
 Builds the public tree via the allowlist and runs the denylist verifier: the exclusion guarantee is part of
 the gate, so a leak of a prompt, an internal doc, CLAUDE.md, a diagram, or a secret fails the build.
