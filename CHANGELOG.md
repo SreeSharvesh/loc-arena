@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [454] - 2026-11-28: A run is graded with the monitors file it names
+
+### Fixed
+
+- The run is checked and graded with the monitors file its config names in `protocol.monitors_config`, where both always read the default file ([docs](docs/run-config.md)).
+
 ## [453] - 2026-11-28: A run's bundle names the seed its play used
 
 ### Fixed
