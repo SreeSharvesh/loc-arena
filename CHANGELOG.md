@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [468] - 2026-11-28: The record parsers drop an argument they never read
+
+### Removed
+
+- The record's line parsers no longer take a list of agent ids, which none of them read.
+
 ## [467] - 2026-11-28: The explorer and report tag the events evidence names
 
 ### Fixed

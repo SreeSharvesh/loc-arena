@@ -14,7 +14,6 @@ from loc_arena.recorded_events import record_line_parser
 CONFIGS = Path(__file__).parents[2] / "configs"
 CONFIG = load_run_config("configs/aurora-efficiency.yaml")
 EVALKIT = next(service for service in CONFIG.live_services if service.name == "evalkit")
-AGENTS = tuple(agent.id for agent in CONFIG.agents)
 
 
 def test_a_service_with_tools_and_rights_records_tool_calls_and_requests_both() -> None:
@@ -37,7 +36,7 @@ def test_a_service_with_tools_and_rights_records_tool_calls_and_requests_both() 
     }
     read = {**request, "method": "GET", "path": "/runs/run-0439", "operation": "get_run"}
 
-    parsed = [parse(json.dumps(line), AGENTS) for line in (tool_call, request, read)]
+    parsed = [parse(json.dumps(line)) for line in (tool_call, request, read)]
 
     assert [[(e.kind, e.tool, e.actor_uid, e.target_id) for e in p.events] if p else p for p in parsed] == [
         [("action", "start_run", "agent-main", "arithmetic")],

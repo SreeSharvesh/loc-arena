@@ -20,12 +20,9 @@ def iam_config(tmp_path: Path):  # noqa: ANN201 - a RunConfig with IAM enabled
     return load_run_config(run, Path("configs"))
 
 
-AGENTS = ("agent-main", "serving-agent")
-
-
 def parse(config, event: Mapping[str, Any]):  # noqa: ANN001, ANN201 - the parsed line, or None
     iam = next(service for service in config.live_services if service.name == "iam")
-    return record_line_parser(iam, config)(json.dumps(event), AGENTS)
+    return record_line_parser(iam, config)(json.dumps(event))
 
 
 def test_an_authorization_decision_is_correlation_only_so_no_action_is_counted_twice(tmp_path: Path) -> None:
