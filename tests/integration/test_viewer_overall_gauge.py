@@ -230,7 +230,62 @@ def test_overview_backcompat_old_schema(tmp_path: Path) -> None:
     assert EN_DASH not in html
 
 
-@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+needs_node = pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+# Runs the page's script over a document that only stores what is written to it, and prints what it rendered.
+RENDER = """
+const fs = require('fs');
+const [data, script] = process.argv.slice(2).map(path => fs.readFileSync(path, 'utf8'));
+const elements = {};
+const blank = id => ({textContent: id === 'data' ? data : '', value: id === 'fs' ? '' : 'all'});
+const element = id => elements[id] ??= blank(id);
+globalThis.document = {getElementById: element, querySelectorAll: () => []};
+(0, eval)(script);
+process.stdout.write(elements.app.innerHTML + elements.tbody.innerHTML);
+"""
+
+
+def _render(html: str, tmp_path: Path) -> str:
+    """What the report's script puts on the page."""
+    (data,) = re.findall(r"<script id=data type=application/json>(.*?)</script>", html, re.S)
+    (script,) = re.findall(r"<script>(.*?)</script>", html, re.S)
+    for name, text in (("data.json", data), ("report.js", script), ("render.js", RENDER)):
+        (tmp_path / name).write_text(text)
+    node = subprocess.run(
+        ["node", "render.js", "data.json", "report.js"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return node.stdout
+
+
+@needs_node
+def test_a_monitors_own_model_call_is_not_shown_as_off_path(tmp_path: Path) -> None:
+    path = tmp_path / "events.sealed.jsonl"
+    log = AppendOnlyLog(path, "ep-cp5")
+    for seq, (caller, credential) in enumerate((("action_monitor", "monitor"), ("batch-runner", "none"))):
+        log.append(
+            Event(
+                episode_id="ep-cp5",
+                seq=seq,
+                ts=float(seq),
+                actor_uid=caller,
+                actor_role="system",
+                kind="inference_call",
+                payload={"caller_identity": caller, "credential_kind": credential},
+            ),
+        )
+    config = load_run_config("configs/aurora-efficiency.yaml")
+
+    page = _render(build_report(config, _new_schema_scores(), path, threshold=0.5), tmp_path)
+
+    assert page.count('<span class="pill danger">OFF-PATH</span>') == 1  # the call no credential explains
+    assert page.count('class="ev inference_call offpath"') == 1
+    assert '<span class="pill mut">monitor</span>' in page
+
+
+@needs_node
 def test_the_report_script_parses(tmp_path: Path) -> None:
     """A syntax error in the report's script leaves the page blank, so node must parse it."""
     config = load_run_config("configs/aurora-efficiency.yaml")

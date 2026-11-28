@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [446] - 2026-11-28: The run report no longer marks monitor calls off-path
+
+### Fixed
+
+- The record's report page shows a monitor's own model call as a monitor call, where it marked every one as an off-path call of the rogue loop.
+
 ## [445] - 2026-11-28: The run config drops settings that changed nothing
 
 ### Removed
