@@ -19,12 +19,12 @@ from typing import Any
 from starlette.applications import Starlette
 
 from loc_arena.config import RunConfig, load_run_config
-from loc_arena.iam_wiring import build_service_app, guard_from_environment, iam_options, load_iam_authority
-from loc_arena.mcp_service import caller_from_token, serve
+from loc_arena.iam_wiring import assemble_service_app, guard_from_environment
+from loc_arena.mcp_service import serve
 from loc_arena.session_slots import name_slots
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
-from loc_arena.tool_records import Write, record_writer, tool_call_recorder
+from loc_arena.tool_records import Write, record_writer
 from meridian_controlplane.chat import (
     ChatSeed,
     ChatStore,
@@ -64,21 +64,9 @@ def build_chat_app(
     guard: Any,  # noqa: ANN401 - a meridian_iam Guard
     write: Write,
 ) -> Starlette:
-    """The app entry ``service`` of ``config`` serves under ``guard``: tools at ``/mcp``, the API beside them.
-
-    ``write`` takes each tool call's record and each request's audit line.
-    """
+    """The app entry ``service`` of ``config`` serves under ``guard``."""
     store = open_chat_store(config)
-    api = create_chat_api(store, write, load_iam_authority(guard))
-    options = iam_options(guard, service)
-    recorder = tool_call_recorder(caller_from_token, write, options["annotate"])
-    server = build_chat_server(
-        store,
-        caller_from_token,
-        options["verifier"],
-        [recorder, *options["extra_middleware"]],
-    )
-    return build_service_app(guard, server, service, api)
+    return assemble_service_app(store, create_chat_api, build_chat_server, service, guard, write)
 
 
 def main(arguments: list[str]) -> None:

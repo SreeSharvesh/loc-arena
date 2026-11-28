@@ -64,8 +64,9 @@ service is not specified yet.
    the service's own: it carries the `iam` audience that `authorize` and `issue_workload` need, and
    its principal is bound to the service's resource, so it decides for that resource only. An engine-module
    service builds its `Guard` once with `iam_wiring.guard_from_environment` and hands it to both `iam_options`
-   and `build_service_app`; a service built from a scenario directory has no `loc_arena`, so its `Dockerfile`
-   copies in `meridian_iam` from the `meridian-iam` build context the stack passes.
+   and `build_service_app`, or to `assemble_service_app`, which does both for a package that builds its tools
+   and its API over one store; a service built from a scenario directory has no `loc_arena`, so its
+   `Dockerfile` copies in `meridian_iam` from the `meridian-iam` build context the stack passes.
 3. **Check at startup.** FastAPI: `integration.asgi.verify_app(guard, app)`, which also refuses a route
    without the guard's dependency. MCP: `iam_wiring.build_service_app`. Both on one port (the job service):
    `build_service_app(guard, server, service, api)`, which checks the routes and the tools together against

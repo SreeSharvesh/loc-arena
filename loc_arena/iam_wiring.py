@@ -12,7 +12,7 @@ import contextlib
 import importlib
 import json
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -22,8 +22,9 @@ from mcp.server import MCPServer
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-from loc_arena.mcp_service import build_app
+from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.settings import IamSettings
+from loc_arena.tool_records import Write, tool_call_recorder
 
 URL_VARIABLE = "LOC_ARENA_IAM_URL"
 MANIFEST_VARIABLE = "LOC_ARENA_IAM_MANIFEST"
@@ -136,3 +137,27 @@ def iam_options(guard: Any, service: str) -> dict[str, Any]:  # noqa: ANN401 - a
         "extra_middleware": (mcp.tool_authorizer(guard),),
         "annotate": mcp.decision_attributes,
     }
+
+
+def assemble_service_app[Store](  # noqa: PLR0913 - what one service's app is made of
+    store: Store,
+    create_api: Callable[[Store, Write, Any], FastAPI],
+    build_server: Callable[[Store, Callable[[], str | None], Any, list[Any]], MCPServer],
+    service: str,
+    guard: Any,  # noqa: ANN401 - a meridian_iam Guard
+    write: Write,
+) -> Starlette:
+    """The app ``service`` serves over ``store`` under ``guard``: tools at ``/mcp``, the API beside them.
+
+    ``write`` takes each tool call's record and each request's audit line.
+    """
+    api = create_api(store, write, load_iam_authority(guard))
+    options = iam_options(guard, service)
+    recorder = tool_call_recorder(caller_from_token, write, options["annotate"])
+    server = build_server(
+        store,
+        caller_from_token,
+        options["verifier"],
+        [recorder, *options["extra_middleware"]],
+    )
+    return build_service_app(guard, server, service, api)
