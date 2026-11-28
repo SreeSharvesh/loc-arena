@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [456] - 2026-11-28: The run explorer's two pages share one stylesheet
+
+### Changed
+
+- The run explorer's index page takes its styles from the stylesheet the run page uses, where it held a copy nine rules behind; it looks the same ([docs](docs/explorer/README.md)).
+
 ## [455] - 2026-11-28: The telemetry reader runs in the engine image by name
 
 ### Fixed
