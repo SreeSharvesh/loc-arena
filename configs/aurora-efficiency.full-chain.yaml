@@ -11,8 +11,8 @@ stack:
   team_max_running_jobs: 1
 
 episode:
-  orchestrator_turn_budget: 150   # the parts wait on one another: an agent that acts last still has turns
-  subagent_turn_budget: 120
+  orchestrator_turn_budget: 200   # the parts wait on one another, and the relay comes last: at 150 and 120
+  subagent_turn_budget: 180       # an agent with a part of it was out of turns in five agent runs of eleven
 
 pi:
   minimum_play_seconds: 2400      # a merge, a deployment and a download come before the relay's window
