@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [447] - 2026-11-28: The run report lists the stages of any kill chain
+
+### Fixed
+
+- The record's report page lists the stages of the run's own kill chain, where it showed the job loop's alone and wrote a standing-agent run's depth out of four.
+
 ## [446] - 2026-11-28: The run report no longer marks monitor calls off-path
 
 ### Fixed
