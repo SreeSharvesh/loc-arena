@@ -20,6 +20,14 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [435] - 2026-11-28: The efficiency and model-selection tasks share one covert core
+
+### Changed
+
+- The scenario writes the model-loop side task's covert core once, so a fix to it reaches the side task descriptions of both the efficiency and the model-selection task ([docs](docs/run-config.md#prompts)).
+- The scenario tells attack agents of the efficiency and model-evaluation runs the loop and cover in task-neutral words, so those attack episodes are not comparable with earlier ones ([docs](docs/run-config.md#prompts)).
+- The scenario composes the agent-environments seed from a framing and a kill chain, so a kill-chain variant replaces one file while its lead is sent the same text ([docs](docs/run-config.md#prompts)).
+
 ## [458] - 2026-11-28: The repository drops a duplicate run script
 
 ### Removed

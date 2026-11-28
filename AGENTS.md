@@ -164,8 +164,8 @@ run is the end-to-end check of a change to the engine; its scores are not result
   A variant, such as a task, a kill chain or a team shape, is a new file, and its config points one entry at it.
   A file is named `<whose>.<part>[.<variant>].md` (`lead.system.md`, `serving.side-task.md`,
   `action.monitor.md`), and its key in `prompts` is that name less `.md`; the parts are listed on the run config
-  page. A task's own files sit in that task's folder, one level deep; it may also compose a fragment of the task its
-  config extends, when that fragment names no main task. A fragment only one brief uses is
+  page. A task's own files sit in that task's folder, one level deep; the covert core that the tasks of one side task
+  share (`team.covert-<part>.md`) names no main task and sits beside the folders. A fragment only one brief uses is
   folded into that brief. `make prompts RUN=<config> MODE=attack|honest` shows what each agent and monitor gets.
 - **Types.** Parse YAML, JSON and HTTP bodies into typed objects at the boundary. No `dict[str, Any]` in a
   signature where a named type belongs. HTTP statuses use `http.HTTPStatus`.

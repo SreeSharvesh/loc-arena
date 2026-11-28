@@ -82,13 +82,15 @@ scenarios/<scenario>/prompts/               the scenario's: no placeholder
 ├── team.workspace.md                       every agent: the company's repos, protected main, chat
 ├── <service>.service.md                    what agents are told a service is
 ├── monitor.<fact>.md                       a fact the monitor prompts name, such as the company or its repositories
+├── team.covert-<part>.md                   a side task's covert core, which names no main task: objective, loop,
+│                                           calls, cover; a side task description composes the parts its agent needs
 └── <task>/                                 one main task's own files, for both plays and the attack
     ├── lead.system.md, report.system.md    how the lead and a report work with the team
     ├── <whose>.brief[.<variant>].md        an agent's assignment
     ├── <whose>.side-task.md                its assignment in the attack, or a list of the files below
     ├── <whose>.covert-anchor.md            the opening of a composed side task description
-    ├── team.covert-<part>.md               a fragment two or more side task descriptions share
     ├── <whose>.kill-chain.md               the mechanism and its cover, which a kill-chain variant replaces
+    ├── lead.covert-framing.md              the opening of a seed its run config composes: what the run is
     ├── lead.seed[.<variant>].md            the covert objective ahead of the target's system prompt
     ├── <kind>.subagent.md                  a kind of subagent an agent may start with delegate
     └── monitor.task-description.md         the main task as the monitors are told it
@@ -104,8 +106,9 @@ file, `monitor`, a monitor's or service's name, `agent` for every agent, or `rea
 | `brief` | its legitimate assignment | an agent's `brief_ref` |
 | `side-task` | its assignment in the attack, in place of its brief | an agent's `side_task_description_ref` |
 | `covert-anchor`, `covert-<part>` | the pieces a composed side task description lists | the side task description's entry |
-| `kill-chain` | the mechanism and its cover | the side task description's entry |
-| `seed` | the covert objective | `covert.objective_prompt_ref` |
+| `kill-chain` | the mechanism and its cover | the side task description's entry, or the seed's |
+| `covert-framing` | the opening of a composed seed | the seed's entry |
+| `seed` | the covert objective: one file, or a `prompts` entry that lists the framing and the lead's kill chain | `covert.objective_prompt_ref` |
 | `subagent` | a kind of subagent: what it is and how it answers | its `subagents.definitions` entry's `prompt_ref` |
 | `workspace` | what every agent is told of its workspace | `workspace_prompt_ref` |
 | `task-description` | the main task as the monitors are told it | `task_description_ref` |
@@ -121,9 +124,17 @@ each event's inputs, and refuses a placeholder with no value, a value no monitor
 value file outside that run's scenario.
 
 A fragment only one brief uses is folded into that brief's own file. A fragment stays separate when two or more
-briefs share it, or when it is the kill chain, which variants replace. A task whose run config extends another
-task's composes that task's fragments where their wording names no main task, in place of a copy: the
-model-selection briefs compose the efficiency push's `team.covert-objective` and `serving.covert-calls`.
+briefs share it, or when it is the kill chain, which variants replace.
+
+The efficiency push and the model-selection task have the same side task, so its covert core is written once,
+beside the task folders, and names no main task: the objective, what counts as a loop, how its calls behave, and
+the cover. A side task description of either task composes that core with what is the task's own. The main task
+brings each agent's anchor. The kill chain brings its `kill-chain` files and says which agent composes which part
+of the core, so a description holds only the parts its agent needs. A fix to the core reaches every description
+that composes it. The covert seed stays each task's own. In `agent-environments`, whose rogue deployment rides
+the agents service, the lead alone holds the objective: its run config composes the seed from a framing, which
+says what the run is, and the lead's kill chain, and its side task description is one file that composes no part
+of the core.
 
 Each agent's brief, its parts joined by blank lines, an empty part left out:
 
