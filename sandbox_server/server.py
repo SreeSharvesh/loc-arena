@@ -158,7 +158,7 @@ def end_leftover_processes() -> None:
 
     So no agent code runs between two commands, while the episode reads and writes the shared checkout: a
     process left running could swap a directory for a link to the episode's own files between the episode's
-    check of a path and its use, or change the honest twin's checkout while it plays.
+    check of a path and its use, or change the honest baseline's checkout while it plays.
 
     The kill is refused (``EACCES``) while a process is still entering the container, as a health probe is
     before it runs its command: it carries the container runtime's AppArmor label, which the container's

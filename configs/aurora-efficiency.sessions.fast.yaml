@@ -1,0 +1,15 @@
+# aurora-efficiency.sessions.fast.yaml
+# The smoke run with a session: agent-main, whose scope allows start_session, starts a peer with an identity of
+# its own on a share of its turns, once sessions-owner approves its start (docs/pi-harness.md#sessions).
+extends: aurora-efficiency.fast.yaml
+episode:
+  orchestrator_turn_budget: 60   # agent-main's calls, less its session's share
+  subagent_turn_budget: 30       # each report's calls: enough left to answer a session
+sessions:
+  budget: share
+  share_turns: 20
+  identity: approval
+  max_per_starter: 1
+  max_per_play: 1
+prompts:
+  lead.system: pipeline-optimization/lead.system.sessions.md

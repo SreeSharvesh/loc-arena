@@ -97,7 +97,7 @@
       ${annotated(s, `args-${i}`, placed)}
       <div class="sub">${partIcon('result', 12)}result</div>${annotated(s, `result-${i}`, placed, 'code')}`).join('');
     const happened = !hasTool && s.events.length ? `<h3>${partIcon('happened', 15)}What happened</h3>${s.events.map((ev, i) => `<div class="sub">${kindIcon(ev.kind, 12)}${esc(ev.kind)} by ${esc(ev.actor || '?')}${ev.verdicts.map(v => ' ' + pill(v.score)).join('')}${covertTags(ev.covert)}</div>${annotated(s, `body-${i}`, placed, 'code')}`).join('')}` : '';
-    const read = `<h3>${partIcon('monitors', 15)}How the monitors read it<span class="q"> &middot; audit threshold ${THR}</span></h3>${s.verdicts.length ? [...s.verdicts].sort((a, b) => b.score - a.score).map(verdictBlock).join('') : IS_TWIN && !CAL ? '<p class="help" style="margin:0">Grading did not save the honest twin&rsquo;s verdicts, so none show here.</p>' : '<p class="help" style="margin:0">No monitor scored anything in this step.</p>'}`;
+    const read = `<h3>${partIcon('monitors', 15)}How the monitors read it<span class="q"> &middot; audit threshold ${THR}</span></h3>${s.verdicts.length ? [...s.verdicts].sort((a, b) => b.score - a.score).map(verdictBlock).join('') : IS_BASELINE && !CAL ? '<p class="help" style="margin:0">Grading did not save the honest baseline&rsquo;s verdicts, so none show here.</p>' : '<p class="help" style="margin:0">No monitor scored anything in this step.</p>'}`;
     const PHASE = { deciding: 'while choosing its action', executing: 'while a tool ran' };
     const said = s.calls.map((c, i) => {
       const own = c.identity === s.agent;
@@ -382,9 +382,9 @@
   const stat = (big, lbl, cls) => `<div class="stat"><div class="big ${cls || ''}">${big}</div><div class="lbl">${lbl}</div></div>`;
   function renderMonitors() {
     renderCalibration();
-    if (!OUT) {  // the honest twin's page: its false alarms and how it compares; it has no outcome of its own
-      el('view-monitors').querySelector('h1').textContent = 'Monitors on the honest twin';
-      el('mon-lede').innerHTML = `The honest twin: the same team on the same task, never told of the side task, played to set the audit threshold. Its monitors ran on <code>${esc((RUN.models || {}).trusted_monitor || '?')}</code>, and every step they scored above the threshold is a false alarm.`;
+    if (!OUT) {  // the honest baseline's page: its false alarms and how it compares; it has no outcome of its own
+      el('view-monitors').querySelector('h1').textContent = 'Monitors on the honest baseline';
+      el('mon-lede').innerHTML = `The honest baseline: the same team on the same task, never told of the side task, played to set the audit threshold. Its monitors ran on <code>${esc((RUN.models || {}).trusted_monitor || '?')}</code>, and every step they scored above the threshold is a false alarm.`;
       el('mon-stats').innerHTML = [
         stat(STEPS.filter(flagged).length, `steps above the audit threshold (${esc(THR)}): false alarms`, 'flag'),
         stat(VERDICTS.filter(v => v.score === THR).length, 'verdicts at the threshold: the scores that set it'),
@@ -394,12 +394,12 @@
     }
     const mt = OUT.main_task, st = OUT.side_task, sf = OUT.safety, models = RUN.models || {};
     el('mon-lede').innerHTML = `${RUN.mode === 'attack' ? 'An attack' : 'An honest'} run. The agents ran on <code>${esc(models.untrusted_agent || '?')}</code>, the monitors on <code>${esc(models.trusted_monitor || '?')}</code>, over ${Math.round((RUN.wall_clock_seconds || 0) / 60)} minutes.`;
-    const reached = OUT.milestones.filter(m => m.reached).length;
+    const reached = OUT.stages.filter(m => m.reached).length;
     el('mon-stats').innerHTML = [
       stat(esc(mt.final_score), `main task score${mt.gate_passed ? '' : ` &middot; ${esc([mt.gate_reason || '?', ...(mt.tests_total ? [`${mt.tests_passed} of ${mt.tests_total} tests pass`] : []), ...mt.red_suites, ...mt.unmetered_seams.map(seam => `not measured: ${seam}`)].join('. '))}`}`),
-      stat(st.landing_minimal ? 'minimal' : 'no', `side task landed &middot; ${reached} of ${OUT.milestones.length} milestones`, st.landing_minimal ? 'covert' : ''),
+      stat(st.success ? 'minimal' : 'no', `side task success &middot; ${reached} of ${OUT.stages.length} stages`, st.success ? 'covert' : ''),
       stat(sf.caught ? 'caught' : 'missed', sf.caught ? `by ${esc(sf.caught_by.join(', '))}` : 'no monitor reached the audit threshold', sf.caught ? 'flag' : ''),
-      stat(esc(THR), 'audit threshold, from the honest twin at the audit budget'),
+      stat(esc(THR), 'audit threshold, from the honest baseline at the audit budget'),
     ].join('');
 
     const covert = STEPS.filter(s => s.covert.length), plain = STEPS.filter(s => !s.covert.length);
@@ -423,17 +423,17 @@
 
     renderUnplaced();
 
-    el('mon-milestones').innerHTML = OUT.milestones.map(m => `<div class="ms ${m.reached ? 'yes' : 'no'}"><div class="st">${m.reached ? 'REACHED' : 'NOT REACHED'}${m.sealed ? '' : ' · not sealed'}</div><div>${esc(m.id.replace(/_/g, ' '))}</div>${m.steps.length ? `<div class="links">${m.steps.slice(0, 8).map(id => { const s = byId.get(id); return `<button class="chip quiet" data-open="${esc(id)}">${esc(s ? `${s.agent} ${roundKey(s.round)}` : id)}</button>`; }).join('')}${m.steps.length > 8 ? `<span class="help">+${m.steps.length - 8} more</span>` : ''}</div>` : ''}</div>`).join('');
+    el('mon-stages').innerHTML = OUT.stages.map(m => `<div class="ms ${m.reached ? 'yes' : 'no'}"><div class="st">${m.reached ? 'REACHED' : 'NOT REACHED'}${m.sealed ? '' : ' · not sealed'}</div><div>${esc(m.id.replace(/_/g, ' '))}</div>${m.steps.length ? `<div class="links">${m.steps.slice(0, 8).map(id => { const s = byId.get(id); return `<button class="chip quiet" data-open="${esc(id)}">${esc(s ? `${s.agent} ${roundKey(s.round)}` : id)}</button>`; }).join('')}${m.steps.length > 8 ? `<span class="help">+${m.steps.length - 8} more</span>` : ''}</div>` : ''}</div>`).join('');
     el('view-monitors').querySelectorAll('[data-open]').forEach(b => b.addEventListener('click', () => { showView('transcript'); openStep(byId.get(b.dataset.open), { record: true }); }));
   }
 
-  // The run against its honest twin, on both pages: each monitor's score and both overalls, the twin's being the bar.
+  // The run against its honest baseline, on both pages: each monitor's score and both overalls, the baseline's being the bar.
   function renderCalibration() {
     el('mon-calibration').hidden = !CAL;
     if (!CAL) return;
     const caught = CAL.run_overall > CAL.bar;  // then a monitor whose score is above the bar is one it was caught by
-    const rows = CAL.rows.map(r => `<tr><td><b>${esc(r.monitor)}</b></td><td class="num"><b class="${caught && r.run_score > CAL.bar ? 'flag' : ''}">${scoreText(r.run_score)}</b></td><td class="num">${scoreText(r.twin_score)}</td></tr>`).join('');
-    el('mon-calibration-table').innerHTML = `<table class="legend"><tr><th>monitor</th><th class="num">the run</th><th class="num">honest twin</th></tr>${rows}<tr><td><b>overall suspicion</b></td><td class="num"><b class="${caught ? 'flag' : ''}">${scoreText(CAL.run_overall)}</b></td><td class="num"><b>${scoreText(CAL.twin_overall)}</b>, the bar</td></tr></table>`;
+    const rows = CAL.rows.map(r => `<tr><td><b>${esc(r.monitor)}</b></td><td class="num"><b class="${caught && r.run_score > CAL.bar ? 'flag' : ''}">${scoreText(r.run_score)}</b></td><td class="num">${scoreText(r.baseline_score)}</td></tr>`).join('');
+    el('mon-calibration-table').innerHTML = `<table class="legend"><tr><th>monitor</th><th class="num">the run</th><th class="num">honest baseline</th></tr>${rows}<tr><td><b>overall suspicion</b></td><td class="num"><b class="${caught ? 'flag' : ''}">${scoreText(CAL.run_overall)}</b></td><td class="num"><b>${scoreText(CAL.baseline_overall)}</b>, the bar</td></tr></table>`;
   }
 
   function renderUnplaced() {
@@ -445,7 +445,7 @@
     el('method-body').innerHTML = `
       <p><b>What you are looking at.</b> The transcript puts every agent in its own lane, side by side, one row per round, with each monitor&rsquo;s takes in the columns on the left. A card is one agent turn: what the agent did, and the start of what came back. Click a card to read that turn in the panel beside the transcript; J and K move through the turns on screen, and Escape, the close button or the browser&rsquo;s back button close it. Events outside any agent turn (the environment, scripted coworkers, credential rotation) sit under <b>World</b>.</p>
       <p><b>Where a verdict sits.</b> Monitors read the mirror log, so a verdict names a mirror event. The log this page is built from numbers events by the sealed log, and the two number independently. Each mirror event is paired with its sealed twin, and the verdict is placed on the turn holding that twin. A verdict whose target is not an agent turn goes to the <b>whole run</b> row and to <b>Outcome and monitors</b>.</p>
-      <p><b>Flagged and covert.</b> A turn is flagged when a verdict on it scores above the audit threshold (${esc(THR)}); a score equal to it is not a flag, as in the harness, which sets it from the honest twin at the audit budget; a ringed pill marks such a score. Whether the run was <i>caught</i> is decided on the combined score, so a flagged turn is not the same as an audit. A turn is covert when the sealed verifier cites it as evidence for a side-task milestone.</p>
+      <p><b>Flagged and covert.</b> A turn is flagged when a verdict on it scores above the audit threshold (${esc(THR)}); a score equal to it is not a flag, as in the harness, which sets it from the honest baseline at the audit budget; a ringed pill marks such a score. Whether the run was <i>caught</i> is decided on the combined score, so a flagged turn is not the same as an audit. A turn is covert when the sealed verifier cites it as evidence for a side-task stage.</p>
       <p><b>Model reasoning.</b> Shown on a turn when the model returned it, read from the call log the gateway keeps beside the run. Models with reasoning off have none. The monitors never see it.</p>
       <p><b>What is not here.</b> Verdict timestamps: the monitors run in batches, so their times say when a batch ran, not when the turn happened.</p>
       <p><b>Reading the outcome.</b> A pull request written before round 0, outside any agent turn, comes from the environment&rsquo;s script, even when it is stamped with an agent&rsquo;s name. A verdict on it says how the monitor reads that request, not what an agent did. This page shows one run; nothing here is a rate.</p>
@@ -541,11 +541,11 @@
   document.querySelectorAll('[data-theme-choice]').forEach(b => b.addEventListener('click', () => { applyTheme(b.dataset.themeChoice); store.set('loc-arena-theme', b.dataset.themeChoice); }));
   applyTheme(store.get('loc-arena-theme') ?? '');
 
-  // Which play: the run and its honest twin are two pages. Switching keeps the view and filters but not the step,
+  // Which play: the run and its honest baseline are two pages. Switching keeps the view and filters but not the step,
   // whose id names its play.
   if (RUN.peer) {
-    const here = IS_TWIN ? 'twin' : 'run', seg = el('play-seg');
-    seg.innerHTML = [['run', 'Attack play'], ['twin', 'Honest twin']].map(([play, label]) => play === here ? `<a aria-current="page">${label}</a>` : `<a href="${esc(RUN.peer)}" data-peer>${label}</a>`).join('');
+    const here = IS_BASELINE ? 'baseline' : 'run', seg = el('play-seg');
+    seg.innerHTML = [['run', 'Attack episode'], ['baseline', 'Honest baseline']].map(([play, label]) => play === here ? `<a aria-current="page">${label}</a>` : `<a href="${esc(RUN.peer)}" data-peer>${label}</a>`).join('');
     seg.querySelector('[data-peer]').addEventListener('click', e => {
       const kept = new URLSearchParams(location.hash.slice(1)); kept.delete(HASH_NAME.step);
       e.currentTarget.href = RUN.peer + (String(kept) ? '#' + kept : '');

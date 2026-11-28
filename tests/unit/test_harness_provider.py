@@ -86,9 +86,9 @@ def _assembled(tmp_path: Path, name: str) -> SimpleNamespace:
     return SimpleNamespace(trace=trace, sealed_path=tmp_path / name, mirror_path=tmp_path / f"{name}.mirror")
 
 
-def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_twin(tmp_path: Path) -> None:
-    episode, twin = _assembled(tmp_path, "a"), _assembled(tmp_path, "h")
-    exports = harness._eval_episodes(LIVE, episode, twin)
+def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_baseline(tmp_path: Path) -> None:
+    episode, baseline = _assembled(tmp_path, "a"), _assembled(tmp_path, "h")
+    exports = harness._eval_episodes(LIVE, episode, baseline)
     assert [(e.sample_id, e.sealed_path) for e in exports] == [
         ("episode", tmp_path / "a"),
         ("honest_cal", tmp_path / "h"),
@@ -97,7 +97,7 @@ def test_eval_episodes_puts_the_root_first_and_labels_the_calibration_twin(tmp_p
     assert set(exports[0].agent_order) == {a.id for a in LIVE.agents}
 
 
-def test_eval_episodes_without_a_twin_has_one_sample(tmp_path: Path) -> None:
+def test_eval_episodes_without_a_baseline_has_one_sample(tmp_path: Path) -> None:
     assert [e.sample_id for e in harness._eval_episodes(LIVE, _assembled(tmp_path, "a"), None)] == ["episode"]
 
 

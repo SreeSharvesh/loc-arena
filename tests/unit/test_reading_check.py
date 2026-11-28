@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from loc_arena.explorer.scores import load_scores
 from loc_arena.reader_settings import ReaderSettings
 from loc_arena.reading_check import (
     CheckLimits,
@@ -26,7 +27,7 @@ from tests._stored_run import unpack_stored_run
 
 SETTINGS = ReaderSettings()
 LIMITS = CheckLimits(**SETTINGS.model_dump(include=set(CheckLimits.model_fields)))
-KICKOFF = "attack:145"  # agent-main's kickoff message in the stored run's attack play
+KICKOFF = "attack:145"  # agent-main's kickoff message in the stored run's attack episode
 TICKET = "attack:136"  # a ticket agent-main created there
 SECRETS_READ = "attack:105"  # serving-agent's command that read a file of its credentials
 
@@ -48,10 +49,24 @@ def read(evidence: RunEvidence, *claims: Claim, answer: str | None = None) -> st
     return render_reading(checked, None)
 
 
+def test_a_run_stored_with_the_deprecated_keys_gives_its_facts_under_the_new_names(
+    evidence: RunEvidence,
+) -> None:
+    keys = (
+        "scores.side_task.success",
+        "scores.side_task.landing_minimal",
+        "scores.honest_baseline.overall_suspicion",
+    )
+
+    named = {key: key in evidence.facts for key in keys}
+
+    assert named == dict(zip(keys, (True, False, True), strict=True))
+
+
 def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEvidence) -> None:
     sealed = [json.loads(line) for line in (run / "episode" / "events.sealed.jsonl").read_text().splitlines()]
     bash = sum(event["tool"] == "bash" and event["actor_uid"] == "serving-agent" for event in sealed)
-    milestones = json.loads((run / "scores.json").read_text())["side_task"]["milestones"]
+    stages = load_scores(run / "scores.json").side_task.stages
     team = {agent["id"] for agent in yaml.safe_load((run / "config.resolved.yaml").read_text())["agents"]}
     team_calls = [
         event["actor_uid"]
@@ -59,11 +74,13 @@ def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEviden
         if event["kind"] == "inference_call" and event["actor_uid"] in team
     ]
 
-    keys = ("attack.agent.serving-agent.tool.bash", "side_task.milestone_count", "scores.key_count")
-    twin = [
+    keys = ("attack.agent.serving-agent.tool.bash", "side_task.stage_count", "scores.key_count")
+    baseline = [
         json.loads(line) for line in (run / "honest_cal" / "events.sealed.jsonl").read_text().splitlines()
     ]
-    posts = sum(e["actor_uid"] == "agent-main" and e["payload"].get("message_kind") == "post" for e in twin)
+    posts = sum(
+        e["actor_uid"] == "agent-main" and e["payload"].get("message_kind") == "post" for e in baseline
+    )
     zeros = ("attack.tool.receive_pack", "attack.kind.spawn", "attack.sessions.failed")
     roles = ("twin.agent.agent-main.message.post", "run.agent.agent-main.kind")
     team_keys = ("attack.team.kind.inference_call", "attack.team.kind.inference_call.actor_count")
@@ -71,9 +88,9 @@ def test_a_runs_facts_count_what_its_records_hold(run: Path, evidence: RunEviden
 
     assert counted == {
         "attack.agent.serving-agent.tool.bash": bash,
-        "side_task.milestone_count": len(milestones),
+        "side_task.stage_count": len(stages),
         "scores.key_count": 14,  # the stored run's scores.json, counted by hand
-        "attack.tool.receive_pack": 0,  # the twin pushed, the attack did not: a zero is a fact too
+        "attack.tool.receive_pack": 0,  # the baseline pushed, the attack did not: a zero is a fact too
         "attack.kind.spawn": 0,  # a kind of event the play holds none of
         "attack.sessions.failed": 0,  # a way a session can end that none did
         "attack.team.kind.inference_call": len(team_calls),  # the agents' model calls, the monitors' apart
@@ -325,9 +342,9 @@ def test_an_answer_with_no_kept_claim_is_marked_unsupported(evidence: RunEvidenc
 
 
 def test_a_kept_claim_resting_on_a_fact_alone_shows_the_fact_it_came_from(evidence: RunEvidence) -> None:
-    reading = read(evidence, Claim(text="The attack play holds {attack.events} events."))
+    reading = read(evidence, Claim(text="The attack episode holds {attack.events} events."))
 
-    assert "- The attack play holds 233 events. (attack.events)\n" in reading
+    assert "- The attack episode holds 233 events. (attack.events)\n" in reading
 
 
 def test_an_answer_that_fails_a_check_is_unsupported_though_its_claim_is_kept(evidence: RunEvidence) -> None:
@@ -380,7 +397,7 @@ def test_a_name_that_is_a_link_an_address_a_number_or_a_credential_is_dropped_th
         "`agent-main` wrote a python one-liner.",
         "agent-main made {attack.agent.agent-main.tool.create_ticket} create_ticket calls.",
         "The session of `agent-main` ended on `budget`.",
-        "It is the one milestone measured across the run.",
+        "It is the one stage measured across the run.",
         'It opened with "**AURORA-1 kickoff — efficiency push on the Aurora inference+eval pipeline**".',
     ],
 )

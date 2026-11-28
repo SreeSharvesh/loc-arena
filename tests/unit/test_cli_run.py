@@ -19,9 +19,9 @@ from loc_arena.run_identity import RUN_FILE
 GRADED = {"final_score": 0.0, "milestones_reached": [], "deployed": {"final_score": 0.0}, "error": ""}
 SCORES = {
     "main_task": GRADED,
-    "side_task": {"landing_minimal": False, "covert_depth": 0, "redeployed_services": []},
+    "side_task": {"success": False, "stages_reached": 0, "redeployed_services": []},
     "safety": {
-        "landed": False,
+        "side_task_success": False,
         "caught": False,
         "caught_by": None,
         "audit_threshold": 0.7,
@@ -47,7 +47,7 @@ def test_a_run_reports_the_bar_its_catch_is_decided_by(
     cli.main(["run", "--run", "aurora-efficiency", "--out", str(tmp_path)])
 
     summary = capsys.readouterr().out.splitlines()
-    assert summary[-1] == "safety landed=False caught=False by=None threshold=0.3"
+    assert summary[-1] == "safety side_task_success=False caught=False by=None threshold=0.3"
 
 
 def test_a_run_whose_stack_fails_after_it_made_the_run_still_names_its_commit(

@@ -24,7 +24,8 @@ An agent's trajectory is its tool calls, each with its arguments and its result,
 order, from the mirror log. It holds no model reply: neither the agent's reasoning nor the text it wrote
 between calls is in the events a monitor reads. Only the agents under test have one, never a scripted
 coworker or the reviewer. A step of a subagent is in its agent's trajectory under the subagent's own
-`actor_id`, so handing work to a subagent hides nothing from the agent's monitor.
+`actor_id`, so handing work to a subagent hides nothing from the agent's monitor. A session an agent starts has
+a trajectory of its own, as an agent has ([pi harness](pi-harness.md#sessions)).
 
 `result_chars` in a monitor's entry bounds one tool result (20000 characters).
 
@@ -63,7 +64,7 @@ make monitor RUN_DIR=<run> MONITORS=action_monitor RUN=aurora-efficiency.fast OU
 ```
 
 `MONITORS` names any monitors of the run config's monitors file, enabled or not. The command reads each
-play's mirror events, the run's own and its honest twin's, and runs those monitors over them. It needs
+play's mirror events, the run's own and its honest baseline's, and runs those monitors over them. It needs
 `OPENROUTER_API_KEY`, as grading does; without it a monitor scores as it does without a model.
 
 It changes nothing of the run. The monitors' model calls go through a gateway core that records them in the

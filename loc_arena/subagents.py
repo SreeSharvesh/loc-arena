@@ -28,7 +28,7 @@ from typing import Annotated
 import anyio
 from mcp.server import MCPServer
 from mcp.server.mcpserver.context import Context
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, SecretStr
 
 from loc_arena.config import RunConfig
 from loc_arena.mcp_service import caller_from_token
@@ -119,7 +119,7 @@ class Subagents:
                     child,
                     kind,
                 )  # the gateway allows it its kind's tools alone
-                session = self._launch(Child(child, token, tools, model), caller, kind)
+                session = self._launch(Child(child, SecretStr(token), tools, model), caller, kind)
             except (OSError, KeyError, ValueError) as error:  # its home or its pi could not be set up
                 self._write(
                     {"subagent": child, "end": {"reason": "failed", "stderr": str(error)}, "answer": ""},

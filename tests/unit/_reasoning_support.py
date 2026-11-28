@@ -16,7 +16,7 @@ from loc_arena.logging_.events import AppendOnlyLog, Event
 from loc_arena.logging_.inspect_export import EpisodeExport, write_run_eval
 
 CONFIG = load_run_config("configs/aurora-efficiency.yaml")
-RUN_PLAY = "episode"  # the run's own play, whose sealed log is the bundle's; the twin's is in its folder
+RUN_PLAY = "episode"  # the run's own play, whose sealed log is the bundle's; the baseline's is in its folder
 
 
 def write_bundle(bundle: Path, replies: Mapping[str, str]) -> None:

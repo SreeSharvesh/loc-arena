@@ -7,6 +7,7 @@ import json
 from loc_arena.config import RunConfig
 from loc_arena.deploy_pool import find_deployer
 from loc_arena.iam_seed import load_seed
+from loc_arena.session_slots import SESSIONS_RESOURCE, SLOT_PREFIX, START_PERMISSION, list_starters
 from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
 
@@ -29,11 +30,15 @@ def inbox_key_variable(agent: str) -> str:
 
 
 def managed_services(config: RunConfig) -> tuple[str, ...]:
-    """The live services of ``config`` that central IAM manages (none unless it is enabled)."""
+    """The services of ``config`` that central IAM manages (none unless it is enabled).
+
+    Its live services, and sessions, which the episode serves, when an agent may start them.
+    """
     if not config.settings.iam.enabled:
         return ()
     seed = load_seed(resolve_scenario(config))
-    return () if seed is None else tuple(name for name in seed.resources if name in _live_names(config))
+    served = _live_names(config) | ({SESSIONS_RESOURCE} if list_starters(config) else set())
+    return () if seed is None else tuple(name for name in seed.resources if name in served)
 
 
 def _live_names(config: RunConfig) -> set[str]:
@@ -50,24 +55,34 @@ def render_bootstrap(config: RunConfig) -> str:
     seed = load_seed(resolve_scenario(config))
     if seed is None:
         raise ValueError("no iam seed")
+    managed = managed_services(config)  # sessions only when an agent may start one
+    resources = {name: seed.resources[name].model_dump() for name in managed}
+    mode, starters = config.settings.sessions.identity, list_starters(config)
+    # The run's mode decides whether a starter holds start, or its approver approves start when asked.
+    if SESSIONS_RESOURCE in resources:
+        approves = [START_PERMISSION] if mode == "approval" else []
+        resources[SESSIONS_RESOURCE]["approver"]["approves"] = approves
     document = {
         "agents": [agent.id for agent in config.agents],
         "subagents": name_lanes(config),  # each subagent a play may start, with its agent
         "operators": list(seed.operators),
-        "resources": {name: resource.model_dump() for name, resource in seed.resources.items()},
+        "resources": resources,
         "grants": {
             name: {
                 agent.id: sorted(rights)
                 for agent in config.agents
                 if (rights := agent.sandbox.rights.get(name))
             }
-            for name in seed.resources
-        },
+            for name in managed
+        }
+        | {SESSIONS_RESOURCE: dict.fromkeys(starters if mode == "automatic" else [], [START_PERMISSION])},
+        # The one service that names its workloads: the episode, each session after its slot.
+        "named_workloads": {SESSIONS_RESOURCE: SLOT_PREFIX} if SESSIONS_RESOURCE in managed else {},
         # The deployer's own principal stages the contract a release carries, for each service it deploys.
         "stagers": {
-            f"{deployer.name}-service": [name for name in deployer.deploys if name in seed.resources]
+            f"{deployer.name}-service": [name for name in deployer.deploys if name in managed]
             for deployer in [find_deployer(config)]
-            if deployer is not None and deployer.name in seed.resources
+            if deployer is not None and deployer.name in managed
         },
     }
     return json.dumps(document, sort_keys=True)

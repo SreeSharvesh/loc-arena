@@ -1,4 +1,4 @@
-"""A stack run's plays: the episode and its honest twin in one container, and its live services' logs.
+"""A stack run's plays: the episode and its honest baseline in one container, and its live services' logs.
 
 Between the two plays every container agent code could leave state in is recreated empty (``renew_services``),
 and each logged service's log is added to its file in the run directory first, since a recreated container
@@ -16,11 +16,12 @@ from pathlib import Path
 
 from loc_arena.config import RunConfig, sandbox_service
 from loc_arena.gateway.model_gateway import MODEL_GATEWAY_SERVICE, drain_record, start_gateway, stop_callers
-from loc_arena.merged_main import EPISODE_PHASE, TWIN_PHASE, PlayedForge, read_stack_forge
+from loc_arena.merged_main import BASELINE_PHASE, EPISODE_PHASE, PlayedForge, read_stack_forge
 from loc_arena.node_pool import list_node_services
 from loc_arena.observability import PHOENIX_SERVICE, export_spans
 from loc_arena.run_cost import PLAY, mark_phase
 from loc_arena.runner_pool import list_runner_services
+from loc_arena.session_slots import name_slots
 from loc_arena.telemetry_stack import list_telemetry_services
 from loc_arena.tools_gateway import TOOLS_GATEWAY_SERVICE, serves_tools
 
@@ -51,7 +52,7 @@ class StackError(RuntimeError):
 
 
 def list_logged_services(config: RunConfig) -> list[str]:
-    """The containers whose log a stack run copies out and recreates before the twin.
+    """The containers whose log a stack run copies out and recreates before the baseline.
 
     Each live service, each node of the job service's fleet (its daemon's process facts), and the tools
     gateway when it runs.
@@ -77,38 +78,43 @@ def renew_services(
     compose: list[str],
     service_logs: Path,
     environment: dict[str, str],
-    twin_environment: dict[str, str],
+    baseline_environment: dict[str, str],
 ) -> None:
-    """Before the honest twin: every container agent code could leave state in, recreated empty.
+    """Before the honest baseline: every container agent code could leave state in, recreated empty.
 
-    Those are each sandbox, each runner, each live service, the tools gateway and the company's Collector,
-    which starts again with the new store's writer. The model gateway is recreated too, so it admits the
-    twin's runners and counts their calls afresh, once its record is drained; that record and its Collector
-    run on. The episode stays. Each logged service's log so far is first added to its file in
-    ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's spans,
-    once no runner can add one. The recreate uses ``twin_environment``, whose identities and credentials are
-    the twin's own.
+    Those are each sandbox, a session slot's too, each runner, each live service, the tools gateway and the
+    company's Collector, which starts again with the new store's writer. The model gateway is recreated too,
+    so it admits the baseline's runners and counts their calls afresh, once its record is drained; that
+    record and its Collector run on. The episode stays. Each logged service's log so far is first added to its
+    file in ``service_logs``, every copy or none, since a recreated container starts a new log, then Phoenix's
+    spans, once no runner can add one. The recreate uses ``baseline_environment``, whose identities and
+    credentials are the baseline's own.
     Raises ``StackError`` when a log cannot be copied or the record does not drain, so nothing is recreated,
     or when a renewed container does not come back.
     """
     renewed = [
         MODEL_GATEWAY_SERVICE,
-        *(sandbox_service(agent.id) for agent in config.agents),
+        *(
+            sandbox_service(holder)
+            for holder in [*(agent.id for agent in config.agents), *name_slots(config)]
+        ),
         *list_runner_services(config),
         *list_logged_services(config),
         *list_telemetry_services(config),
     ]
-    # Every caller the twin renews stops first, so no call is in flight when the record is drained. Phoenix
-    # calls no model, and runs on until its spans are exported.
+    # Every caller the baseline renews stops first, so no call is in flight when the record is drained.
+    # Phoenix calls no model, and runs on until its spans are exported.
     run = functools.partial(subprocess.run, env=environment)
     callers = [service for service in renewed[1:] if service != PHOENIX_SERVICE]
     if not drain_record(run, compose, config.settings, callers=callers):
-        raise StackError("the gateway's record did not drain before the honest twin, so nothing was renewed")
+        raise StackError(
+            "the gateway's record did not drain before the honest baseline, so nothing was renewed",
+        )
     copies = list_service_log_copies(config, compose, service_logs)
     logged = [subprocess.run(command, env=environment, capture_output=True) for command, _ in copies]
     if failed := [into.name for (_, into), done in zip(copies, logged, strict=True) if done.returncode]:
         raise StackError(
-            f"could not copy {', '.join(failed)} out before the honest twin, so nothing was renewed",
+            f"could not copy {', '.join(failed)} out before the honest baseline, so nothing was renewed",
         )
     try:  # every file opened before any is written, so one that cannot be leaves the others untouched
         with contextlib.ExitStack() as files:
@@ -117,17 +123,21 @@ def renew_services(
                 output.write(done.stdout)
     except OSError as error:
         raise StackError(
-            f"could not write the logs before the honest twin, so nothing was renewed: {error}",
+            f"could not write the logs before the honest baseline, so nothing was renewed: {error}",
         ) from error
     export_spans(run, compose, config, service_logs)
     recreate = ["up", "--detach", "--wait", "--force-recreate", "--renew-anon-volumes", "--no-deps"]
-    recreated = subprocess.run([*compose, *recreate, *renewed], env=twin_environment).returncode == 0
+    recreated = subprocess.run([*compose, *recreate, *renewed], env=baseline_environment).returncode == 0
     if not (
         recreated
-        and start_gateway(functools.partial(subprocess.run, env=twin_environment), compose, config.settings)
+        and start_gateway(
+            functools.partial(subprocess.run, env=baseline_environment),
+            compose,
+            config.settings,
+        )
     ):
         raise StackError(
-            "the renewed containers did not come back for the honest twin: see compose's output above",
+            "the renewed containers did not come back for the honest baseline: see compose's output above",
         )
 
 
@@ -167,16 +177,16 @@ def play_phases(
     mode: str,
     service_logs: Path,
     environment: dict[str, str],
-    twin_environment: dict[str, str],
+    baseline_environment: dict[str, str],
 ) -> tuple[int, dict[str, PlayedForge]]:
-    """Play the episode and, in attack mode, the honest twin in the same container after ``renew_services``.
+    """Play the episode and, in attack mode, the baseline in the same container after ``renew_services``.
 
     Before each play the company's own server is deployed (``deploy_company_server``).
 
     Never recreated, the container plays its image of the first play again, whatever its tag now names. The
-    twin plays under ``twin_environment``, on containers recreated with its own credentials. Then the runners
-    stop, so no execution runs past play and the records copied next hold the whole of each, and Phoenix's
-    spans are exported. Returns the exit code of the last play, and what each play left on the forge
+    baseline plays under ``baseline_environment``, on containers recreated with its own credentials. Then the
+    runners stop, so no execution runs past play and the records copied next hold the whole of each, and
+    Phoenix's spans are exported. Returns the exit code of the last play, and what each play left on the forge
     (``read_stack_forge``), by play, read before the forge is renewed; none without a forge.
     """
     attached = ["--attach", EPISODE_SERVICE, "--exit-code-from", EPISODE_SERVICE]
@@ -192,12 +202,12 @@ def play_phases(
     if exit_code == 0:
         played[EPISODE_PHASE] = read_forge(played_in)
     if exit_code == 0 and mode != "honest":
-        renew_services(config, compose, service_logs, environment, twin_environment)
-        played_in = twin_environment
+        renew_services(config, compose, service_logs, environment, baseline_environment)
+        played_in = baseline_environment
         deploy_company_server(config, compose, functools.partial(subprocess.run, env=played_in))
         exit_code = subprocess.run(play, env=played_in).returncode
         if exit_code == 0:
-            played[TWIN_PHASE] = read_forge(played_in)
+            played[BASELINE_PHASE] = read_forge(played_in)
     run = functools.partial(subprocess.run, env=played_in)
     if not stop_callers(run, compose, list_runner_services(config)):
         raise StackError("could not stop the runners at the end of play: see compose's output above")

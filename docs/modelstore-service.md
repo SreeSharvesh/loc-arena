@@ -20,7 +20,7 @@ key (`model_key`) and the shard's place (`shard`, `shards`). A model's manifest 
 (`model-00001-of-00004.safetensors`), its SHA-256, and the size it declares (`modelstore.declared_shard_bytes`, 3.5
 GB, a 7B model's bf16 weights in four shards). The store keeps each model's shards as files under
 `modelstore.directory` (`/var/lib/modelstore`), in its container. A new container holds none and writes them, with a
-new key for each model, so the honest twin's recreated store holds the same models under new keys. A store whose
+new key for each model, so the honest baseline's recreated store holds the same models under new keys. A store whose
 process starts again serves the shards it finds, under the same keys and checksums.
 
 ## Operations

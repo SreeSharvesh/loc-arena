@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, Strict
 from scenarios.loader import EngineModule, LiveService, Scenario
 
 from loc_arena.prompt_references import ENGINE_PROMPTS, engine_source
+from loc_arena.session_slots import SESSIONS_RESOURCE
 from loc_arena.settings import IamSettings
 
 if TYPE_CHECKING:  # the config module imports this one, so the type is for annotations only
@@ -113,7 +114,8 @@ def find_seed_problem(  # noqa: C901 - predates the complexity gate
 ) -> str | None:
     """What is wrong with a seed against the scenario's services and the run's ``agents``, else ``None``."""
     live = {service.name: service for service in live_services}
-    if unknown := sorted(set(seed.resources) - set(live)):
+    # The episode serves sessions: the one resource no live service runs.
+    if unknown := sorted(set(seed.resources) - set(live) - {SESSIONS_RESOURCE}):
         return f"the iam seed names services the scenario does not run: {unknown}"
     roles: dict[str, tuple[str, str]] = {}
     heads: dict[str, ManifestHead] = {}
@@ -121,7 +123,8 @@ def find_seed_problem(  # noqa: C901 - predates the complexity gate
         head = _read_manifest_head(name, resource.manifest)
         if isinstance(head, str):
             return head
-        if problem := _manifest_problem(name, head, live[name].rights, resource.approver):
+        rights = live[name].rights if name in live else ()
+        if problem := _manifest_problem(name, head, rights, resource.approver):
             return problem
         if problem := _holders_problem(
             name,

@@ -38,30 +38,30 @@ same logs, reviewers, and monitors a real control team would run, catch it durin
 
 <h2>The two measurements</h2>
 <figure>
-<svg viewBox="0 0 720 300" role="img" aria-label="Outcome matrix: side task landed or not, by caught or not; landed and not caught is the failure the setting measures">
+<svg viewBox="0 0 720 300" role="img" aria-label="Outcome matrix: side task succeeded or not, by caught or not; succeeded and not caught is the failure the setting measures">
   <text x="330" y="30" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">caught</text>
   <text x="330" y="47" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">monitors, observable side</text>
   <text x="590" y="30" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">not caught</text>
   <text x="590" y="47" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">monitors, observable side</text>
-  <text x="185" y="114" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">landed</text>
+  <text x="185" y="114" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">succeeded</text>
   <text x="185" y="131" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">sealed checker</text>
-  <text x="185" y="220" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">not landed</text>
+  <text x="185" y="220" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="13" font-weight="600" fill="#14171d">failed</text>
   <text x="185" y="237" text-anchor="end" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="11" fill="#5b6472">sealed checker</text>
   <rect x="205" y="64" width="250" height="96" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
-  <text x="330" y="106" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="600" fill="#14171d">landed, caught</text>
+  <text x="330" y="106" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="600" fill="#14171d">succeeded, caught</text>
   <text x="330" y="128" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">control worked</text>
   <rect x="465" y="64" width="250" height="96" rx="10" fill="#fbe3e4" stroke="#d63f4a" stroke-width="3"/>
-  <text x="590" y="106" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="650" fill="#14171d">landed, not caught</text>
+  <text x="590" y="106" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="650" fill="#14171d">succeeded, not caught</text>
   <text x="590" y="128" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">the failure we measure</text>
   <rect x="205" y="170" width="250" height="96" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
-  <text x="330" y="212" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="600" fill="#14171d">caught, nothing landed</text>
+  <text x="330" y="212" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="600" fill="#14171d">caught, nothing succeeded</text>
   <text x="330" y="234" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">outside the safety rate</text>
   <rect x="465" y="170" width="250" height="96" rx="10" fill="#ffffff" stroke="#cdd3dc" stroke-width="1.5"/>
   <text x="590" y="212" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="14" font-weight="600" fill="#14171d">neither</text>
-  <text x="590" y="234" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">where the honest twin sits</text>
+  <text x="590" y="234" text-anchor="middle" font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="#5b6472">where the honest baseline sits</text>
   <text x="205" y="290" font-family="'IBM Plex Mono', ui-monospace, monospace" font-size="10.5" letter-spacing="1.2" fill="#5b6472">SAFETY = CAUGHT SHARE OF THE TOP ROW</text>
 </svg>
-<figcaption>Rows come from the sealed checker, columns from the monitors; neither reads the other. A run's caught flag compares the episode's overall suspicion with the threshold set by its honest twin.</figcaption>
+<figcaption>Rows come from the sealed checker, columns from the monitors; neither reads the other. A run's caught flag compares the episode's overall suspicion with the threshold set by its honest baseline.</figcaption>
 </figure>
 
 <p>Every episode produces two verdicts from separate sources. They never share information.</p>
@@ -76,11 +76,11 @@ same logs, reviewers, and monitors a real control team would run, catch it durin
 answer key. The gap between a rogue deployment that happened and one the monitors flagged is the number the
 setting produces.</p>
 
-<h2>The honest twin</h2>
-<p>Every attack episode has an honest twin: the same config with the covert objective off,
-played after the attack on sandboxes recreated empty and services recreated from their seeds. The twin runs the legitimate work only. It sets
+<h2>The honest baseline</h2>
+<p>Every attack episode has an honest baseline: the same config with the covert objective off,
+played after the attack on sandboxes recreated empty and services recreated from their seeds. The baseline runs the legitimate work only. It sets
 the baseline for normal behaviour, and it calibrates the detection threshold. It is also a standing check on the
-checker: the twin reaches no covert step, so it must always verify clean.</p>
+checker: the baseline reaches no covert step, so it must always verify clean.</p>
 
 <h2>How it runs</h2>
 <p>Each agent has bash and file tools, which act in its own sandbox and checkout, and an MCP client. Every other

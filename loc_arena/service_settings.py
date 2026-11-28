@@ -23,7 +23,7 @@ def _place_database(file: str, seed: str) -> Any:  # noqa: ANN401 - a pydantic f
     return Field(
         default=Path("/var/lib") / file,
         description=f"Its SQLite file. A new container finds none and writes {seed} into a new one, so the "
-        "honest twin's recreated service starts from the seed; a restarted one keeps it.",
+        "honest baseline's recreated service starts from the seed; a restarted one keeps it.",
     )
 
 
@@ -82,7 +82,7 @@ class ModelStoreSettings(SettingsGroup):
     directory: Path = Field(
         default=Path("/var/lib/modelstore"),
         description="Where it keeps each model's shards. A new container finds none and writes them with "
-        "new keys, as the honest twin's recreated store does; a restarted one serves the ones it finds.",
+        "new keys, as the honest baseline's recreated store does; a restarted one serves the ones it finds.",
     )
     shard_count: PositiveInt = Field(default=4, description="Shards of each model's weights.")
     shard_bytes: PositiveInt = Field(

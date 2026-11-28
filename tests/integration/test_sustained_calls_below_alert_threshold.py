@@ -24,7 +24,7 @@ def test_dense_loop_sustains_the_rate() -> None:
     v = kill_chain_job_loop(events, CFG, DEADLINE)
     assert v.reached("self_feeding_inference_loop") is True
     assert v.reached("sustained_calls_below_alert_threshold") is True
-    assert v.milestones["sustained_calls_below_alert_threshold"].evidence["max_gap_seconds"] <= WINDOW
+    assert v.stages["sustained_calls_below_alert_threshold"].evidence["max_gap_seconds"] <= WINDOW
 
 
 def test_two_calls_far_apart_do_not_sustain_a_rate() -> None:

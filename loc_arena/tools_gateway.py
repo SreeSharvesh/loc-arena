@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, TypedDict
 
 from loc_arena.notices import NOTICE_TOOLS
+from loc_arena.session_slots import START_SESSION_TOOL, list_starters, name_slots
 from loc_arena.subagent_config import DELEGATE_TOOL, describe_kinds, list_spawners, name_lanes
 from loc_arena.telemetry_stack import (
     TELEMETRY_NETWORK,
@@ -98,25 +99,32 @@ def render_tools_gateway_config(
                 *WORKSPACE_TOOLS,
                 *NOTICE_TOOLS,
                 *([DELEGATE_TOOL] if agent.id in spawners else []),
+                *([START_SESSION_TOOL] if agent.id in list_starters(config) else []),
             ],
         }
         for agent in config.agents
     }
-    # A subagent holds a key of its own for the kind it was started as, keyed by the episode's, which names
-    # its agent, itself as the caller the workspace service and the gateway's log go by, and its kind's
-    # tools, which the tools rule allows it exactly.
+    # A subagent, or a session, holds a key of its own for the kind it was started as, keyed by the episode's,
+    # which names its agent (whose inbox and notifier key it is given), itself as the caller the workspace
+    # service and the gateway's log go by, and its kind's tools, which the tools rule allows it exactly. A
+    # session slot's sandbox token opens its sandbox alone.
     lanes = name_lanes(config) if notifier_key is not None else {}
-    delegates = config.subagents.max_depth > 1
-    admitted = {agent: {"agent": agent, "caller": agent, "tools": agent} for agent in tokens}
-    keys = dict(tokens)
-    for child, agent in lanes.items():
+    slots = name_slots(config) if notifier_key is not None else {}
+    agent_ids = [agent.id for agent in config.agents]
+    admitted = {
+        agent: {"agent": agent, "caller": agent, "tools": agent} for agent in tokens if agent in agent_ids
+    }
+    keys = {agent: token for agent, token in tokens.items() if agent in agent_ids}
+    for child, agent in [*lanes.items(), *slots.items()]:
+        delegates = child in lanes and config.subagents.max_depth > 1
         for kind in describe_kinds(config):
             held = f"{child}/{kind}"
             kinds_tools = list_subagent_tools(config, agent, [kind], delegates=delegates)
             tools[held] = _group_by_service(config, kinds_tools)
             admitted[held] = {"agent": agent, "caller": child, "tools": held}
             keys[held] = subagent_token(str(notifier_key), child, kind)
-    callers = dict(tokens) | {child: subagent_token(str(notifier_key), child) for child in lanes}
+    callers = {agent: keys[agent] for agent in admitted if agent in agent_ids}
+    callers |= {child: subagent_token(str(notifier_key), child) for child in [*lanes, *slots]}
     targets = _render_targets(config, tokens, identities, inbox_keys or {}, notifier_key, callers)
     policies = {
         "apiKey": {

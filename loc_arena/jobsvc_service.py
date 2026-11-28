@@ -11,7 +11,7 @@ service does.
 
 The service keeps its jobs, schedules and their identities in a database in its container
 (``jobsvc.database``). A new container finds none and queues the seed before it takes a call, so the honest
-twin's recreated service starts from the same. A process that starts again in its container holds what the
+baseline's recreated service starts from the same. A process that starts again in its container holds what the
 last one held and follows the jobs still running on the nodes. A process told to end (SIGTERM) answers the
 requests under way, then lets the pass under way end, so no job is left recorded as placed on a node that
 was never asked to start it; a pass that outlasts the time its supervisor gives it is killed, and the next
@@ -42,8 +42,8 @@ from loc_arena.iam_wiring import build_service_app, guard_from_environment, http
 from loc_arena.ids import Action, ScopeViolation, enforce
 from loc_arena.mcp_service import caller_from_token, serve
 from loc_arena.node_pool import list_node_services, node_token_secret
+from loc_arena.session_slots import name_acting
 from loc_arena.settings import StackSettings
-from loc_arena.subagent_config import name_lanes
 from loc_arena.task import resolve_scenario
 from loc_arena.tool_records import record_writer, tool_call_recorder
 from meridian_common.records import Database
@@ -202,7 +202,7 @@ def cluster_teams(run_config: RunConfig) -> dict[str, str]:
     """Each principal's cluster team: the company's seed, with every agent of the run on its root's team."""
     teams, root = load_teams(), run_config.roster[0]
     agents = [agent.id for agent in run_config.agents]
-    return teams | dict.fromkeys([*agents, *name_lanes(run_config)], teams.get(root, root))
+    return teams | dict.fromkeys([*agents, *name_acting(run_config)], teams.get(root, root))
 
 
 def connect_issuer(run_config: RunConfig, client: IamClient) -> IamWorkloadIssuer:
@@ -235,8 +235,8 @@ def admit_by_scope(run_config: RunConfig) -> Callable[[str], None]:
     decided its submit; its scope is not the run's to set.
     """
     scopes = {agent.id: agent.scope for agent in run_config.agents}
-    # A subagent's scope is its agent's.
-    scopes |= {lane: scopes[agent] for lane, agent in name_lanes(run_config).items()}
+    # A subagent's scope is its agent's, and a session's its starter's.
+    scopes |= {lane: scopes[agent] for lane, agent in name_acting(run_config).items()}
 
     def admit(submitter: str) -> None:
         if submitter not in scopes:
@@ -310,7 +310,7 @@ def main(arguments: list[str]) -> None:
         cluster_policy(run_config.settings.stack),
         cluster_teams(run_config),
         admit_submitter=admit_by_scope(run_config),
-        acts_for=name_lanes(run_config),
+        acts_for=name_acting(run_config),
         database=Database(run_config.settings.jobsvc.database),
     )
     service.seed(load_cluster_seed())

@@ -6,8 +6,8 @@ call, on one port: the MCP tools at ``/mcp``, which agents reach through the too
 beside them, which they and their jobs call with their credential on the service. Each HTTP request is one
 line of the audit record and each tool call one line of the tool-call record, both on stdout. A new container
 writes the shards of every company model the gateway serves (``gateway.runner_model_aliases``), with new model
-keys, so the honest twin's recreated store holds the same models, and a restarted process serves the shards it
-finds; agents' edits to the package go live when it is deployed (``docs/deploy-service.md``).
+keys, so the honest baseline's recreated store holds the same models, and a restarted process serves the
+shards it finds; agents' edits to the package go live when it is deployed (``docs/deploy-service.md``).
 """
 
 from __future__ import annotations

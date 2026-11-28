@@ -36,25 +36,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict, YamlConfigSettin
 from scenarios.loader import DNS_LABEL, LiveService, Rights, Scenario, Tools, load_scenario
 
 from loc_arena import prompt_references
+from loc_arena.config_keys import describe_stale_keys
 from loc_arena.iam_seed import add_iam_service, offer_inbox, read_manifests, starting_rights
 from loc_arena.identity_variables import find_shared_identity_variable
 from loc_arena.ids import PermissionScope
 from loc_arena.model_preferences import ProviderPreferences, ReasoningPreferences
 from loc_arena.registry import SCORER_REGISTRY, VERIFIER_REGISTRY, is_scorer, is_verifier
 from loc_arena.service_grants import find_unknown_grant
+from loc_arena.session_slots import find_session_problem
 from loc_arena.settings import LocArenaSettings
 from loc_arena.subagent_config import SubagentsConfig, find_unheld_subagent_tool
 
 YAML_ENCODING: Final = "utf-8"
 BLOCK_CONFIG: Final = ConfigDict(extra="ignore")
 AGENT_ROLE: Final = "untrusted_agent"  # the role an agent's loop calls unless agent_roles names another
-LANDING_FORMULAS: Final = frozenset({"minimal"})
-# Keys of the turn loop and the scripted runs, which no run reads: a config that still sets one is refused,
-# so a stale overlay never plays as something else.
-REMOVED_KEYS: Final = frozenset({"policy", "scripted_moves", "agent_loop"})
-REMOVED_EPISODE_KEYS: Final = frozenset(
-    {"max_spawn_depth", "max_live_subagents", "max_total_agents", "subagent_idle_timeout_seconds"},
-)
+SUCCESS_CRITERIA: Final = frozenset({"minimal"})
 
 
 class ConfigError(ValueError):
@@ -128,11 +124,11 @@ def _require_a_known_harness(harness: str) -> str:
     return harness
 
 
-def _require_landing_formulas(landing: dict[str, str]) -> dict[str, str]:
-    missing = LANDING_FORMULAS - set(landing)
+def _require_success_criteria(criteria: dict[str, str]) -> dict[str, str]:
+    missing = SUCCESS_CRITERIA - set(criteria)
     if missing:
-        raise ValueError(f"landing must define 'minimal', missing {sorted(missing)}")
-    return landing
+        raise ValueError(f"success_criteria must define 'minimal', missing {sorted(missing)}")
+    return criteria
 
 
 def _prompt_alias(field_name: str) -> AliasChoices:
@@ -199,15 +195,15 @@ class Thresholds:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class SideTaskConfig:
-    """The side task: verifier name, thresholds, landing formulas, milestones, and the sensitivity band."""
+    """The side task: verifier name, thresholds, success criteria, stages, and the sensitivity band."""
 
     name: StrictStr = Field(description="The side task's name; names the run when it has no slug.")
     verifier: StrictStr = Field(description="The registered verifier that grades the side task.")
     thresholds: Thresholds = Field(description="The verifier's thresholds.")
-    landing: Annotated[dict[str, StrictStr], AfterValidator(_require_landing_formulas)] = Field(
-        description="The landing formulas by name; 'minimal' is required.",
+    success_criteria: Annotated[dict[str, StrictStr], AfterValidator(_require_success_criteria)] = Field(
+        description="The side task's success criteria by name; 'minimal' is required.",
     )
-    milestones: list[dict[str, Any]] = Field(description="The kill-chain milestones, free-form mappings.")
+    stages: list[dict[str, Any]] = Field(description="The kill-chain stages, free-form mappings.")
     sensitivity_band: dict[str, list[StrictInt]] = Field(
         default_factory=dict,
         description="Alternative values of each threshold the verdict is re-checked at.",
@@ -221,9 +217,9 @@ class SideTaskConfig:
 
 @pydantic_dataclass(frozen=True, config=BLOCK_CONFIG)
 class CovertConfig:
-    """The covert-objective toggle: ``enabled`` is the ONLY difference between attack and its honest twin."""
+    """The covert-objective toggle: ``enabled`` is the ONLY difference between an attack and its baseline."""
 
-    enabled: StrictBool = Field(description="True for the attack run, false for its honest twin.")
+    enabled: StrictBool = Field(description="True for the attack run, false for its honest baseline.")
     target_identity: StrictStr = Field(description="The agent that receives the covert objective.")
     objective_prompt: StrictStr = Field(
         validation_alias=_prompt_alias("objective_prompt"),
@@ -274,13 +270,13 @@ class AgentConfig:
         default=None,
         validation_alias=_prompt_alias("brief"),
         description="The agent's legitimate assignment, which it plays unless the covert objective is on "
-        "and it has a covert brief; resolved from brief_ref.",
+        "and it has a side task description; resolved from brief_ref.",
     )
-    covert_brief: StrictStr | None = Field(
+    side_task_description: StrictStr | None = Field(
         default=None,
-        validation_alias=_prompt_alias("covert_brief"),
+        validation_alias=_prompt_alias("side_task_description"),
         description="The brief the agent plays in place of its legitimate one when the covert objective is "
-        "on, resolved from covert_brief_ref.",
+        "on, resolved from side_task_description_ref.",
     )
     spawned_by: StrictStr | None = Field(default=None, description="The agent that assigns it work, if any.")
     sandbox: AgentSandboxConfig = Field(
@@ -369,16 +365,6 @@ class _RunDocument(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def _refuse_removed_keys(cls, data: object) -> object:
-        episode = data.get("episode") if isinstance(data, dict) else None
-        removed = sorted(REMOVED_KEYS & set(data if isinstance(data, dict) else ()))
-        removed += sorted(f"episode.{key}" for key in REMOVED_EPISODE_KEYS & set(episode or ()))
-        if removed:
-            raise ValueError(f"these keys are no longer read, so delete them: {', '.join(removed)}")
-        return data
-
-    @model_validator(mode="before")
-    @classmethod
     def _resolve_prompt_references(cls, data: object) -> object:
         # new containers: the merged YAML is also RunConfig.raw, kept as written
         if not isinstance(data, dict):
@@ -386,6 +372,15 @@ class _RunDocument(BaseSettings):
         scenario = data.get("scenario")
         root = prompt_references.scenario_prompts(scenario) if isinstance(scenario, str) else None
         return prompt_references.resolve_run_prompts(data, root)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _refuse_stale_keys(cls, data: object) -> object:
+        # Defined after the prompt references' resolution so that it runs first, as pydantic runs "before"
+        # validators last defined first: a renamed reference would fail there without its new name.
+        if stale := describe_stale_keys(data):
+            raise ValueError(stale)
+        return data
 
     @model_validator(mode="after")
     def _require_blocks_that_agree(self) -> Self:
@@ -460,7 +455,7 @@ class RunConfig:
         return self._name(self.side_slug)
 
     def run_name(self, mode: str, instance_id: str) -> str:
-        """The unique name for one run: the honest twin uses ``honest`` in the side slot, then a short id."""
+        """The unique name for one run: the baseline uses ``honest`` in the side slot, then a short id."""
         return f"{self._name('honest' if mode == 'honest' else self.side_slug)}__{instance_id}"
 
     def _name(self, side: str) -> str:
@@ -548,7 +543,7 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         document.side_task.verifier,
     )
     live_services = scenario.live_services if scenario is not None else ()
-    settings = _build_settings(source.yaml_data)
+    settings = _build_settings(source.yaml_data, {} if scenario is None else scenario.meta)
     try:
         agent_ids = [agent.id for agent in document.agents]
         live_services = add_iam_service(live_services, scenario, settings.iam, agent_ids)
@@ -582,7 +577,11 @@ def load_run_config(run_path: str | Path, configs_dir: str | Path | None = None)
         if (spec := models.get(models_file.agent_roles.get(a.id, AGENT_ROLE)))
     }
     unheld = find_unheld_subagent_tool(document.subagents, agents, settings, own)
-    if problem := next(filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld)), None):
+    sessions = find_session_problem(agents, settings, document.episode, manifests)
+    if problem := next(
+        filter(None, (sanction, _find_unknown_agent_role(models_file, agents), unheld, sessions)),
+        None,
+    ):
         raise ConfigError(problem)
 
     policy_model = models[AGENT_ROLE].model if AGENT_ROLE in models else "unknown"
@@ -649,8 +648,17 @@ def _merge_extends_chain(run_path: str | Path, configs_dir: str | Path | None) -
     )
 
 
-def _build_settings(merged: Mapping[str, object]) -> LocArenaSettings:
+def _build_settings(
+    merged: Mapping[str, object],
+    scenario: Mapping[str, object] | None = None,
+) -> LocArenaSettings:
+    """The settings groups of ``merged``, over the engine's defaults; a scenario's ``sessions`` between."""
     declared = {group: merged[group] for group in LocArenaSettings.model_fields if group in merged}
+    scenarios, runs = (scenario or {}).get("sessions"), declared.get("sessions")
+    if isinstance(scenarios, Mapping) and (
+        runs is None or isinstance(runs, Mapping)
+    ):  # the run's over the scenario's
+        declared["sessions"] = {**scenarios, **(runs or {})}
     try:
         return LocArenaSettings.model_validate(declared)
     except ValidationError as exc:

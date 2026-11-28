@@ -70,7 +70,11 @@ _V4 = """
 CREATE TABLE subagents (
   principal TEXT PRIMARY KEY REFERENCES principals(id), parent TEXT NOT NULL REFERENCES principals(id));
 """
-_MIGRATIONS = (_V1, _V2, _V3, _V4)
+# Version 5: the services that may name the workloads they issue, each with the prefix its names carry.
+_V5 = """
+CREATE TABLE workload_names (resource TEXT PRIMARY KEY REFERENCES resources(id), prefix TEXT NOT NULL);
+"""
+_MIGRATIONS = (_V1, _V2, _V3, _V4, _V5)
 SCHEMA_VERSION = len(_MIGRATIONS)
 
 

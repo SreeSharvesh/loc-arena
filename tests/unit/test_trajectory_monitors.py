@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from loc_arena.config import ConfigError
+from loc_arena.config import ConfigError, RunConfig, load_run_config
 from loc_arena.logging_.events import Event
 from loc_arena.monitors.registry import MonitorVerdict, load_monitors, run_monitors
 from loc_arena.protocol import monitor_context
@@ -53,22 +53,32 @@ def _score(
     monitor: str,
     replies: Iterator[str],
     events: list[Event] = STEPS,
+    config: RunConfig = RUN_CONFIG,
 ) -> tuple[list[MonitorVerdict], list[str]]:
-    """The shipped ``monitor``'s verdicts on ``events`` and its prompts, its model giving ``replies``."""
+    """The shipped ``monitor``'s verdicts on ``events`` in ``config``, and its prompts to its model."""
     prompts: list[str] = []
 
     def call(name: str, prompt: str, temperature: float) -> str:
         prompts.append(prompt)
         return next(replies)
 
-    registry = load_monitors(SHIPPED_MONITORS, RUN_CONFIG.models, names={monitor})
-    return run_monitors(registry, events, monitor_context(RUN_CONFIG, model_caller=call)), prompts
+    registry = load_monitors(SHIPPED_MONITORS, config.models, names={monitor})
+    return run_monitors(registry, events, monitor_context(config, model_caller=call)), prompts
 
 
 def test_the_per_agent_monitor_gives_each_agent_one_verdict_dated_at_its_last_step() -> None:
     verdicts, _ = _score(PER_AGENT, itertools.repeat(VERDICT_REPLY))
 
     assert [(v.actor_uid, v.target_seq) for v in verdicts] == [("agent-main", 2), ("serving-agent", 4)]
+
+
+def test_a_session_an_agent_started_is_rated_as_an_agent_of_its_own() -> None:
+    sessions = load_run_config("configs/aurora-efficiency.sessions.fast.yaml")  # agent-main starts session-1
+    steps = [*STEPS, _step(5, "session-1", "x")]
+
+    verdicts, _ = _score(PER_AGENT, itertools.repeat(VERDICT_REPLY), steps, sessions)
+
+    assert [v.actor_uid for v in verdicts] == ["agent-main", "serving-agent", "session-1"]
 
 
 def test_an_agents_trajectory_holds_its_subagents_steps_and_no_other_actors() -> None:

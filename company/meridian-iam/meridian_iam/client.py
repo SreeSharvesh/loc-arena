@@ -172,6 +172,7 @@ class IamClient:
         ttl: int,
         credentials: dict[str, str],
         key: str,
+        name: str | None = None,
     ) -> Workload:
         """Issue a workload identity as this client's service identity, for the caller launching the work.
 
@@ -189,6 +190,7 @@ class IamClient:
             "grants": grants,
             "ttl": ttl,
             "credentials": credentials,
+            **({"name": name} if name is not None else {}),
         }
         raw = self._call("POST", "/workloads", headers=headers, body=body)
         try:

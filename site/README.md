@@ -2,7 +2,7 @@
 
 A static course that teaches the LOC-Arena setting to an outsider, in five chapters:
 
-- `index.html`: the AI-control question, the two measurements, the honest twin.
+- `index.html`: the AI-control question, the two measurements, the honest baseline.
 - `architecture.html`: the engine every setting runs on: the gateway, the sandboxes, the services behind one MCP
   route, the sealed and observable records, and how an episode runs.
 - `settings.html`, `meridian.html`, `meridian-aurora.html`: what a setting defines, the Meridian AI Lab (its

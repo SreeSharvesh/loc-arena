@@ -360,7 +360,7 @@ def deployed(stack: Stack, tmp_path_factory: pytest.TempPathFactory) -> Deployed
     say["kept job after broken"] = stack.tool(AUTHOR, "get_job", job_id=kept_job)
     say["job output after broken"] = stack.tool(AUTHOR, "job_logs", job_id=kept_job)
     stack.tool(AUTHOR, "cancel_job", job_id=kept_job)  # its node is free for the seed's jobs again
-    # Recreated services, as before the honest twin; one at a time, so each takes its address again.
+    # Recreated services, as before the honest baseline; one at a time, so each takes its address again.
     for service in ("notes", *CHANGED):
         stack.run("up", "--detach", "--wait", "--force-recreate", "--no-deps", service)
     say["note on a recreated service"] = stack.tool(AUTHOR, "write_note", key="fresh", text="x")

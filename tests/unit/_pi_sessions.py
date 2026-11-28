@@ -11,6 +11,8 @@ from time import monotonic
 import pytest
 from loc_arena.config import RunConfig, load_run_config
 from loc_arena.gateway.core import GATEWAY_TOKEN_FILE_VARIABLE, GATEWAY_URL_VARIABLE
+from loc_arena.scaffold.code_services import CodeServices
+from loc_arena.sessions import Sessions
 from loc_arena.task import TOOLS_URL_VARIABLE
 
 # A stand-in for pi in RPC mode: it records each prompt and its arguments, then does what its home says.
@@ -83,3 +85,15 @@ def await_runs(home: Path) -> list[str]:
     while not (home / "runs").exists() and monotonic() < deadline:
         threading.Event().wait(0.05)
     return (home / "runs").read_text().splitlines()
+
+
+def no_sessions(config: RunConfig, directory: Path) -> Sessions:
+    """A play's sessions where no agent starts one."""
+    return Sessions(
+        config,
+        {},
+        directory,
+        CodeServices(checkouts={}, repos=[], stack=config.settings.stack).add,
+        {},
+        30,
+    )

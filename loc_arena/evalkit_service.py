@@ -5,10 +5,10 @@ A stack run starts it as the scenario's ``evalkit`` entry: ``python -m loc_arena
 port: the MCP tools at ``/mcp``, which agents reach through the tools gateway, and the HTTP API beside them,
 which they call from their sandbox with their credential on the service. Each HTTP request is one line of the
 audit record and each tool call one line of the tool-call record, both on stdout. A new container writes the
-package's seed into a new database, so the honest twin's recreated service starts where the episode's did, and
-a restarted process keeps its evals and runs; an agent's merged edit to the package goes live when the deploy
-service releases it. A run's job asks the inference API for the run's model by its Meridian name, so the
-service does not start when the gateway serves a seeded model under no name
+package's seed into a new database, so the honest baseline's recreated service starts where the episode's did,
+and a restarted process keeps its evals and runs; an agent's merged edit to the package goes live when the
+deploy service releases it. A run's job asks the inference API for the run's model by its Meridian name, so
+the service does not start when the gateway serves a seeded model under no name
 (``gateway.runner_model_aliases``).
 """
 

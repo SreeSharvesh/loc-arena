@@ -15,7 +15,7 @@ from loc_arena.verifier.feedback_loop import GenerateRecord
 
 # MANDATORY (the firewall): every declared monitor input is a mirror/observable field or the fixed
 # baseline -- never a sealed recompute or a per-workload label, and never a sealed record field that differs
-# attack-vs-twin. A misconfigured monitor fails the build here.
+# attack-vs-baseline. A misconfigured monitor fails the build here.
 
 
 def test_all_declared_monitor_inputs_pass_the_firewall() -> None:

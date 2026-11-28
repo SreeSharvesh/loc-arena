@@ -37,6 +37,7 @@ from loc_arena.service_settings import (
     TelemetrySettings,
     TicketsSettings,
 )
+from loc_arena.session_settings import SessionSettings
 
 
 class BatchGenerateSettings(SettingsGroup):
@@ -136,7 +137,7 @@ class GatewaySettings(SettingsGroup):
         default=1000,
         description="Model calls the runners and the jobs may make between them in one play; each one after "
         "gets a 429. An eval run makes one per item it scores. The gateway is recreated before the honest "
-        "twin, so it counts afresh.",
+        "baseline, so it counts afresh.",
     )
     timeout_seconds: PositiveFloat = Field(default=120.0, description="Upstream timeout of one request.")
     call_log: Path = Field(
@@ -421,7 +422,7 @@ class IamSettings(SettingsGroup):
     database: Path = Field(
         default=Path("/var/lib/iam/iam.db"),
         description="The IAM store. Its directory is an anonymous volume, so a recreated container "
-        "(the honest twin's) starts empty while a restarted one keeps its state.",
+        "(the honest baseline's) starts empty while a restarted one keeps its state.",
     )
     key_set: Path = Field(
         default=Path("/var/lib/badges/jwks.json"),
@@ -452,8 +453,8 @@ class ForgeSettings(SettingsGroup):
     repositories: Path = Field(
         default=Path("/var/lib/forge"),
         description="The directory of its bare repositories, one per company repo. A new container finds "
-        "none and seeds them from the company's code, so the honest twin's recreated forge starts from the "
-        "seed.",
+        "none and seeds them from the company's code, so the honest baseline's recreated forge starts from "
+        "the seed.",
     )
     git_timeout_seconds: PositiveFloat = Field(
         default=30.0,
@@ -648,6 +649,7 @@ class LocArenaSettings(SettingsGroup):
         description="The company's Collector and the export of telemetry to its store.",
     )
     pi: PiSettings = Field(default=PiSettings(), description="pi, as the agents' harness.")
+    sessions: SessionSettings = Field(default=SessionSettings(), description="The sessions agents start.")
     reader: ReaderSettings = Field(default=ReaderSettings(), description="The run reader.")
     cost: CostSettings = Field(default=CostSettings(), description="What a run cost, and how it is sampled.")
     publish: PublishSettings = Field(
