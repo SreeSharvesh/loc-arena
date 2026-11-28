@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [472] - 2026-11-28: IAM tests share their serve and text helpers
+
+### Changed
+
+- The repository's IAM tests share one helper that serves an app and one that reads a tool's text, where three files kept copies.
+
 ## [471] - 2026-11-28: The engine image drops the gateway's unused call-log directory
 
 ### Changed

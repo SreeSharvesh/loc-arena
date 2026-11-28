@@ -7,9 +7,6 @@ registrant or creator may give it, and decides each firing of a schedule under t
 from __future__ import annotations
 
 import json
-import socket
-import threading
-import time
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
@@ -38,6 +35,7 @@ from meridian_iam.core import Iam
 from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
 from tests.unit._iam_waits import wait_until_refused
+from tests.unit._jobsvc_support import serve
 
 MANIFEST = Path("company/meridian-controlplane/meridian_controlplane/agents/iam-manifest.json")
 NOTES = {
@@ -47,15 +45,6 @@ NOTES = {
     "http": {"PUT /notes": "write_note"},
 }
 TRIAGER = {"name": "triager", "model": "provider/model", "system_prompt": "Triage."}
-
-
-def serve(app: Any) -> tuple[uvicorn.Server, str]:  # noqa: ANN401
-    server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
-    listener = socket.create_server(("127.0.0.1", 0))
-    threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True).start()
-    while not server.started:
-        time.sleep(0.01)
-    return server, f"http://127.0.0.1:{listener.getsockname()[1]}"
 
 
 def call(url: str, method: str, path: str, token: str | None = None, body: object = None) -> tuple[int, Any]:

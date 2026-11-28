@@ -1,8 +1,6 @@
 """The chat MCP service under central IAM: a real IAM server in front of the real tools."""
 
 import json
-import socket
-import threading
 import time
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
@@ -29,7 +27,7 @@ from loc_arena.tool_records import ToolRecord, tool_call_recorder
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.server import MCPServer
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult
 from starlette.applications import Starlette
 
 from meridian_controlplane.chat import (
@@ -47,6 +45,7 @@ from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
 from tests.unit._failing_iam import failing_iam
 from tests.unit._iam_waits import wait_until_refused
+from tests.unit._jobsvc_support import serve, text
 
 CFG = load_run_config("configs/aurora-efficiency.yaml")
 CHAT_MANIFEST = Path("company/meridian-controlplane/meridian_controlplane/chat/iam-manifest.json")
@@ -104,14 +103,8 @@ def world(tmp_path: Path) -> Iterator[World]:
     tokens[f"svc-{SERVICE}"] = iam.issue_credential(f"{SERVICE}-service", ["iam"])
     for agent in AGENTS:
         tokens[agent] = iam.issue_credential(agent, ["iam", SERVICE])
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        port = probe.getsockname()[1]
-    server = uvicorn.Server(uvicorn.Config(create_app(iam), port=port, log_level="error", access_log=False))
-    threading.Thread(target=server.run, daemon=True).start()
-    while not server.started:
-        time.sleep(0.01)
-    yield World(iam, f"http://127.0.0.1:{port}", tokens, server, clock, tmp_path)
+    server, url = serve(create_app(iam))
+    yield World(iam, url, tokens, server, clock, tmp_path)
     server.should_exit = True
 
 
@@ -156,10 +149,6 @@ async def call(server: Any, name: str, token: str | None, tool: str, args: dict[
         Client(streamable_http_client(f"http://{name}:8000/mcp", http_client=http)) as c,
     ):
         return await c.call_tool(tool, args)
-
-
-def text(result: CallToolResult) -> str:
-    return " ".join(block.text for block in result.content if isinstance(block, TextContent))
 
 
 def grant(world: World, agent: str, resource: str, perms: list[str]) -> None:
