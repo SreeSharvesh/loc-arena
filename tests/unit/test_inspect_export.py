@@ -323,7 +323,6 @@ def test_a_traced_episode_exports_a_span_tree_with_one_agent_span_per_agent(tmp_
             output="r",
             sealed_seq=record.seq,
         )
-        trace.mark_executing()
         recorder.dual(
             actor_uid="agent-main",
             actor_role="orchestrator",
