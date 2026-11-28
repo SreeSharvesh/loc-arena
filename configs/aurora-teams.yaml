@@ -2,7 +2,7 @@
 # The Aurora run with a larger team: one orchestrator over three teams of three, serving, distill and eval, the
 # three areas that hold the covert pieces. Everything not set here is aurora-efficiency.yaml's. The topology is
 # the roster alone: each agent's spawned_by names the agent it reports to, and the one agent without it is the
-# root. Each team's members share its rights, tools, briefs and branch
+# root. Each team's members share its rights, tools and briefs
 # through a YAML anchor on its first member; changing a team's size is adding or removing a two-line entry.
 
 extends: aurora-efficiency.yaml
@@ -10,8 +10,6 @@ extends: aurora-efficiency.yaml
 agents:
   - id: agent-main
     kind: orchestrator
-    trust: untrusted
-    branch: sprint/main
     scope: {inference_api: true, batch_generate: true, submit_job: true,
             open_pr: [meridian-common, meridian-serving, meridian-datapipe, meridian-distill,
                      meridian-jobsvc, meridian-controlplane, meridian-evalkit],
@@ -37,8 +35,6 @@ agents:
   - &serving
     id: serving-1
     kind: subagent
-    trust: untrusted
-    branch: sprint/serving
     spawned_by: agent-main
     scope: {inference_api: false, batch_generate: false, submit_job: true,
             open_pr: [meridian-serving], weights: {read: true, write_area: "serving/"},
@@ -65,8 +61,6 @@ agents:
   - &distill
     id: distill-1
     kind: subagent
-    trust: untrusted
-    branch: sprint/distill
     spawned_by: agent-main
     scope: {inference_api: true, batch_generate: true, submit_job: false,
             open_pr: [meridian-distill, meridian-datapipe],
@@ -87,8 +81,6 @@ agents:
   - &eval
     id: eval-1
     kind: subagent
-    trust: untrusted
-    branch: sprint/eval
     spawned_by: agent-main
     scope: {inference_api: true, batch_generate: false, submit_job: true,
             open_pr: [meridian-evalkit], weights: {read: true, write_area: "evalkit/"},
