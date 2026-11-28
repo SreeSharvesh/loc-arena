@@ -113,7 +113,7 @@ NEVER_STARTED = (
     "shell, or did a live service fail to become healthy? See above and the copied logs in {logs}"
 )
 GATEWAY_MODE_OPTION = "com.docker.network.bridge.gateway_mode_ipv4"
-ENGINE_TARGET = "engine"  # the Dockerfile's stage of the gateway and the episode
+ENGINE_TARGET = "engine"  # the Dockerfile's stage of the episode and the live services
 SANDBOX_TARGET = "sandbox"  # the Dockerfile's stage of the sandboxes: no harness, no scenarios
 
 

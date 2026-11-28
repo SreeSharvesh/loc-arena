@@ -2,8 +2,8 @@
 # needs, with nothing of the harness or the scenarios, so agent code cannot read how it is graded. `runner` is a
 # sandbox that runs the company's own agents with pi; `worker` a sandbox that runs the job service's jobs as real
 # processes through its node daemon. `engine`, the last stage and so what a plain `docker build .` gives, holds
-# the engine, its scenarios and the company repos, for the gateway and the episode, and pi for an episode whose
-# agents run in it (`harness: pi`).
+# the engine, its scenarios and the company repos, for the episode and the live services, and pi, which runs the
+# agents' sessions in the episode. The model gateway and its Collector run pinned images of their own.
 # A machine that re-signs outbound HTTPS gives the build its certificate bundle as the secret `ca_bundle`
 # (`loc_arena.machine_roots`); each step that downloads then verifies with it, and no image keeps it. With no
 # such secret the steps verify as each tool does by default.
@@ -74,8 +74,8 @@ COPY loc_arena ./loc_arena
 COPY sandbox_server ./sandbox_server
 COPY scenarios ./scenarios
 COPY company ./company
-# The gateway's call log, the episode's bundles and the checkouts the episode shares with the sandbox: named
-# volumes take their owner from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
+# The episode's bundles and the checkouts the episode shares with the sandbox: named volumes take their owner
+# from these directories. /var/lib/iam is central IAM's store: an anonymous volume there
 # is recreated empty with its container, which is what gives the honest baseline a fresh IAM; /var/lib/badges holds
 # the key set of IAM's badges, which the model gateway reads. /var/lib/tickets, /var/lib/chat, /var/lib/notes,
 # /var/lib/evalkit, /var/lib/agents and /var/lib/jobsvc hold those services' databases, /var/lib/modelstore
@@ -83,7 +83,7 @@ COPY company ./company
 # deployed service runs, each in the container's own layer, which a recreated container starts without.
 # /records is where each live service writes its record lines and the episode reads them during play.
 RUN --mount=type=secret,id=ca_bundle [ ! -f /run/secrets/ca_bundle ] || export SSL_CERT_FILE=/run/secrets/ca_bundle; \
-    uv sync --frozen --no-dev && owned="/sealed /output /checkouts /records /var/lib/iam /var/lib/badges \
+    uv sync --frozen --no-dev && owned="/output /checkouts /records /var/lib/iam /var/lib/badges \
     /var/lib/tickets /var/lib/chat /var/lib/notes /var/lib/evalkit /var/lib/agents /var/lib/jobsvc \
     /var/lib/modelstore /var/lib/forge /var/lib/release" && mkdir $owned && chown nobody $owned
 USER nobody
