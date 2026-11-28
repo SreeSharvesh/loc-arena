@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [467] - 2026-11-28: The explorer and report tag the events evidence names
+
+### Fixed
+
+- The run explorer and the run report mark as covert the events of the jobs a stage names, where they marked unrelated events numbered like its model calls.
+
 ## [466] - 2026-11-28: Five services build their app through one helper
 
 ### Changed

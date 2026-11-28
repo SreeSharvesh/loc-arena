@@ -1,13 +1,16 @@
 """Which earlier event each event of a play refers to by an id it names or bears.
 
 An id is a ticket's, a pull request's by its repository, a note's, a job's or a chat message's. An event
-refers to the first and the last earlier event that bore an id it names.
+refers to the first and the last earlier event that bore an id it names. A side-task stage's evidence names
+the events of the jobs it names.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+
+from pydantic import JsonValue
 
 from loc_arena.logging_.events import Event
 
@@ -39,6 +42,21 @@ def job_of(event: Event) -> str | None:
         return str(event.payload.get("job_id") or "") or None
     result = event.result if isinstance(event.result, dict) else {}
     return (str(result.get("id") or "") or None) if event.tool == "submit_job" else None
+
+
+def list_evidence_seqs(evidence: Mapping[str, JsonValue], sealed: Sequence[Event]) -> list[int]:
+    """The sealed events a side-task stage's evidence names: those of the jobs it names.
+
+    Its call seqs number the play's answered model calls, not its sealed events, and an off-path call has no
+    sealed event.
+    """
+    jobs = {
+        str(job)
+        for key, value in evidence.items()
+        if key.endswith("_job_ids") and isinstance(value, list)
+        for job in value
+    }
+    return sorted(event.seq for event in sealed if job_of(event) in jobs)
 
 
 def _resolve(name: str, event: Event, bearing: Mapping[str, list[int]]) -> str | None:
