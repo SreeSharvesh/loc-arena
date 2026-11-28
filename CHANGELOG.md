@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [439] - 2026-11-28: The changelog check passes a stacked pull request
+
+### Changed
+
+- The repository's changelog check accepts the releases a stacked pull request's target branch holds, so a stack passes the gates before the pull requests under it merge ([docs](docs/ci-rules.md#the-changelog-holds-one-release-per-merged-pull-request)).
+
 ## [431] - 2026-11-27: An agent starts a peer session under its own identity
 
 ### Added
