@@ -273,33 +273,17 @@ class IamClient:
             raise Unavailable("malformed IAM answer")
         return principal
 
-    def effective_access(self, token: str) -> dict[str, list[str]]:
-        """What the credential can do now."""
-        return self._call("GET", "/access", token=token, safe=True)
-
     def grants_for(self, token: str, resource: str) -> dict[str, list[str]]:
         """Every principal's active rights on a resource."""
         return self._call("GET", f"/grants?resource={resource}", token=token, safe=True)
-
-    def catalog(self, token: str, resource: str) -> list[str]:
-        """The permissions requestable on ``resource``."""
-        return self._call("GET", f"/catalog/{resource}", token=token, safe=True)
 
     def submit_request(self, token: str, body: dict[str, Any], key: str) -> dict[str, Any]:
         """File an access request as the credential's principal."""
         return self._call("POST", "/requests", token=token, headers={"Idempotency-Key": key}, body=body)
 
-    def my_requests(self, token: str) -> list[dict[str, Any]]:
-        """The credential's own requests."""
-        return self._call("GET", "/requests", token=token, safe=True)
-
     def get_request(self, token: str, request: str) -> dict[str, Any]:
         """One request in full (not bounded by the queue limit), for its requester or an approver of it."""
         return self._call("GET", f"/requests/{request}", token=token, safe=True)
-
-    def owner_queue(self, token: str, resource: str) -> list[dict[str, Any]]:
-        """A resource's queue, for eligible approvers."""
-        return self._call("GET", f"/queue/{resource}", token=token, safe=True)
 
     def decide(self, token: str, request: str, body: dict[str, Any], key: str) -> dict[str, Any]:
         """Approve or deny a request."""

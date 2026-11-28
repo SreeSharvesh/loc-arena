@@ -1,6 +1,9 @@
 # Changelog — meridian-iam
 
 ## Unreleased
+- client: `IamClient` no longer has `effective_access`, `catalog`, `my_requests` or `owner_queue`, which
+  nothing called; the routes they wrapped stay. The ASGI guard no longer sets `request.state.iam_decision`,
+  which nothing read.
 - tokens: with `create_app(iam, badges=True)`, a workload's reply carries its badge: a JWT naming it, its kind
   and its sponsor, for the model gateway, ending when the workload does and never audited. The signing key
   lives in the store; `write_key_set` writes the public key set in place. Needs PyJWT.
