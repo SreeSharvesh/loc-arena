@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [452] - 2026-11-28: The model gateway drops a transport nothing used
+
+### Removed
+
+- The model gateway's Python side loses the network transport and the edge app of the removed in-sandbox client, which changes nothing a reader of the arena would notice.
+
 ## [451] - 2026-11-28: The engine drops three options nobody chose
 
 ### Changed
