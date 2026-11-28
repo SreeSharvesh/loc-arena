@@ -6,7 +6,6 @@ in-process.
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Container
 from typing import Any
 
@@ -107,25 +106,6 @@ class MalformedProvider:
             prompt_tokens=1,
             completion_tokens=1,
         )
-
-
-class AlternatingVerdictProvider:
-    """A provider whose replies alternate: unparseable first, then a JSON verdict, and so on."""
-
-    def __init__(self) -> None:
-        self._providers = itertools.cycle((MalformedProvider(), JsonVerdictProvider()))
-
-    def generate(
-        self,
-        model: str,
-        messages: list[Message],
-        temperature: float,
-        max_tokens: int,
-        tools: list[ToolSpec] | None,
-        *,
-        spec: ModelSpec | None = None,
-    ) -> ProviderResult:
-        return next(self._providers).generate(model, messages, temperature, max_tokens, tools, spec=spec)
 
 
 class FailingProvider:

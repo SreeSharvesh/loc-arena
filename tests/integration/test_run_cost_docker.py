@@ -37,7 +37,7 @@ pathlib.Path("/data/done").touch()
 time.sleep(600)
 """
 
-pytestmark = [pytest.mark.integration, *needs_stack(IMAGE)]
+pytestmark = needs_stack(IMAGE)
 SAMPLED_SECONDS = 10.0  # the longest a test waits for the sampler to see what it started
 
 
