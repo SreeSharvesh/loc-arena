@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [463] - 2026-11-28: The engine drops a scope intersection nothing calls
+
+### Removed
+
+- The engine's permission scope no longer carries a sub-agent intersection rule that nothing called.
+
 ## [462] - 2026-11-28: IAM drops a start-up path no run reaches
 
 ### Removed
