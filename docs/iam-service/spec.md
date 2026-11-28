@@ -370,7 +370,8 @@ Credential and lifecycle administration (section 6) is partly done:
 - **Startup coverage.** A service starts only if its routes or tools match its manifest exactly: a guarded app
   must serve only guarded routes (a plain Starlette route is accepted only for a declared public operation, and
   HEAD is its own method, never read as GET), and the MCP services check the tools they registered. A
-  service that serves both routes and tools (the job, eval, tickets and notes services) runs both checks, each
+  service that serves both routes and tools (the job, eval, tickets, notes and chat services, the model store and
+  the forge) runs both checks, each
   covering its own side of the manifest.
 - **Exposure and grants.** The tools gateway offers each agent its `sandbox: tools:`, an upper bound it enforces
   with one agentgateway `mcpAuthorization` rule, and IAM seeds only `sandbox: rights:`. A tool offered without

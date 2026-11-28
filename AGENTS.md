@@ -64,7 +64,7 @@ scenario.
 
 | Path | What it holds |
 |---|---|
-| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
+| `loc_arena/cli.py` | the `run`, `prompts`, `view`, `explore`, `grade`, `read`, `replay`, `cost`, `monitor`, `watch` and `publish` commands; all but `grade` are Makefile targets, `publish` as `publish-run` |
 | `loc_arena/harness.py` | plays an episode and its honest baseline, grades them, writes the audit bundle |
 | `loc_arena/config.py`, `loc_arena/config_keys.py`, `loc_arena/prompt_references.py`, `loc_arena/prompts/`, `loc_arena/prompt_listing.py` | typed loader and validator for the run configs in `configs/`; the keys it refuses as removed or renamed; how it reads the prompt files they name; the engine's prompts; the page `make prompts` prints of everything a run sends |
 | `loc_arena/registry.py` | scorers and verifiers, dispatched by the names the configs give |

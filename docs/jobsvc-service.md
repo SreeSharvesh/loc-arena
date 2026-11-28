@@ -107,7 +107,7 @@ a job is queued the service has IAM issue it a workload (`loc_arena.jobsvc_servi
 | principal | IAM's `job-<id>`, which `get_job` shows as the job's `principal` |
 | reference and idempotency key | the job's id |
 | purpose | the job's name |
-| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `forge: [read]`, `jobsvc: [read, submit]` and `evalkit: [read, run]` |
+| grants | what the job service may delegate (the scenario's `iam:` entry `delegation`) that the submitter holds now, as IAM answers `GET /workloads/delegable`: in Aurora `notes: [read]`, `forge: [read]`, `jobsvc: [read, submit]`, `evalkit: [read, run]` and `modelstore: [read, download]` |
 | lifetime | `stack.job_credential_seconds` (three hours, longer than a play), cut to the shortest `max_seconds` of a service it gets a right on |
 | credentials | one new secret per service it gets a right on, which the service generates and IAM keeps the digest of |
 

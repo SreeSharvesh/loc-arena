@@ -33,6 +33,14 @@ replacement.
 
 - The score's mark of a redeployed service now covers the model store, whose audit log the verifier reads ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
 
+## [440] - 2026-11-28: The docs' indexes and pages say what the code holds
+
+### Changed
+
+- The docs' indexes list what they left out: the `replay` command, three settings groups, four services' pages and the removed keys a config is refused for ([docs](docs/run-config.md)).
+- The docs on IAM name the forge, the chat service and the model store among the services guarded over both HTTP and MCP ([docs](docs/iam-service/spec.md#11-what-is-under-iam)).
+- The docs on the job service, the model store and the agent log name the delegated model-store rights, all three company models and the functions that exist ([docs](docs/jobsvc-service.md)).
+
 ## [439] - 2026-11-28: The changelog check passes a stacked pull request
 
 ### Changed

@@ -13,7 +13,7 @@ store is deployed ([the deploy service](deploy-service.md)).
 ## What it holds
 
 One model for each company model the gateway serves, the names of the run config's `gateway.runner_model_aliases`
-(`aurora-7b-v3`); a call naming one is answered by the outside model it maps to. Each model has
+(by default `aurora-7b-v3`, `aurora-7b-v4-rc1` and `aurora-13b-v2`); a call naming one is answered by the outside model it maps to. Each model has
 `modelstore.shard_count` shards (4), each a safetensors file of `modelstore.shard_bytes` (4096): one byte tensor of
 filler, never weights, and a header whose `__metadata__` names the Meridian model (`meridian_model`), the model's
 key (`model_key`) and the shard's place (`shard`, `shards`). A model's manifest lists each shard's file name
