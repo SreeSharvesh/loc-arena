@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [445] - 2026-11-28: The run config drops settings that changed nothing
+
+### Removed
+
+- The run config no longer accepts three `inference` settings that nothing read, and its defaults drop three unread blocks, so every key left changes a run ([docs](docs/run-config.md#settings-groups-loc_arenasettingspy-loc_arenaservice_settingspy)).
+
 ## [443] - 2026-11-28: The engine drops a dead report and duplicate threshold rule
 
 ### Changed
