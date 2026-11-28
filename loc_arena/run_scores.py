@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from loc_arena.config import RunConfig
 from loc_arena.deployed_score import DeployedScore
 from loc_arena.logging_.events import read_events
+from loc_arena.monitors.aggregation import resolve_weight
 from loc_arena.monitors.registry import MonitorVerdict, find_fallback_only_monitors
 
 if TYPE_CHECKING:
@@ -133,15 +134,6 @@ def honest_baseline_scores(
     )
 
 
-def resolved_weight(spec: Any, agg: Any) -> float:
-    """The level-2 weight a monitor contributes with (its own ``weight``, else the ``agg.weights`` entry).
-
-    Mirrors ``overall_suspicion``'s resolution exactly so the reported weights match what produced the
-    overall aggregate: a spec weight left at the default 1.0 falls back to ``agg.weights.get(name, 1.0)``.
-    """
-    return float(spec.weight if spec.weight != 1.0 else agg.weights.get(spec.name, 1.0))
-
-
 def build_scores(
     config: RunConfig,
     mode: str,
@@ -173,7 +165,7 @@ def build_scores(
         if caught
         else []
     )
-    resolved_weights = {spec.name: resolved_weight(spec, agg) for spec in specs}
+    resolved_weights = {spec.name: resolve_weight(spec, agg) for spec in specs}
 
     # Errored: a monitor_error on the episode's or the honest baseline's sealed log (an async timeout or raise
     # -> floor, or a model given up on), or a live monitor whose model never gave a usable verdict, so every
@@ -211,7 +203,7 @@ def build_scores(
                 "mode": spec.mode,
                 "taps": list(spec.taps),
                 "score": round(row_score, 6),
-                "weight": resolved_weight(spec, agg),
+                "weight": resolve_weight(spec, agg),
                 "n_verdicts": len(own),
                 "top_reasons": [v.reason for v in own[:3]],
                 "errored": spec.name in errored_monitors,
