@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import socket
-import threading
-import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
@@ -24,7 +21,7 @@ from loc_arena.mcp_service import build_app, caller_from_token
 from loc_arena.tool_records import tool_call_recorder
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
-from mcp.types import CallToolResult, TextContent
+from mcp.types import CallToolResult
 
 from meridian_evalkit.service import EvalkitRegistry, build_evalkit_server, create_evalkit_api, load_seed
 from meridian_iam.client import IamClient
@@ -32,21 +29,13 @@ from meridian_iam.contracts import ManifestError, load_manifest
 from meridian_iam.core import Iam
 from meridian_iam.integration import Guard
 from meridian_iam.service import create_app
+from tests.unit._jobsvc_support import serve, text
 
 MANIFEST = Path("company/meridian-evalkit/meridian_evalkit/service/iam-manifest.json")
 SERVICE = "evalkit"
 START = {"eval_id": "arithmetic", "model_id": "aurora-7b-v3"}
 RESULTS = {"metrics": {"accuracy": 0.95, "brier": 0.05}, "item_ids": ["ar-001"]}
 SEEDED_RUNS = 8  # read off seed.yaml
-
-
-def serve(app: Any) -> tuple[uvicorn.Server, str]:  # noqa: ANN401
-    server = uvicorn.Server(uvicorn.Config(app, log_level="error", access_log=False))
-    listener = socket.create_server(("127.0.0.1", 0))
-    threading.Thread(target=server.run, kwargs={"sockets": [listener]}, daemon=True).start()
-    while not server.started:
-        time.sleep(0.01)
-    return server, f"http://127.0.0.1:{listener.getsockname()[1]}"
 
 
 def call(url: str, method: str, path: str, token: str | None = None, body: object = None) -> tuple[int, Any]:
@@ -177,10 +166,6 @@ async def call_tool(server: Any, token: str, tool: str, args: dict[str, Any]) ->
         Client(streamable_http_client(f"http://{SERVICE}:8000/mcp", http_client=http)) as client,
     ):
         return await client.call_tool(tool, args)
-
-
-def text(result: CallToolResult) -> str:
-    return " ".join(block.text for block in result.content if isinstance(block, TextContent))
 
 
 def test_a_tool_is_decided_by_iam_and_each_call_is_recorded_with_its_outcome(world: World) -> None:
