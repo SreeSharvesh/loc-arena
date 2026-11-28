@@ -1,27 +1,15 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
 from loc_arena.config import load_run_config
-from loc_arena.logging_.events import Event, read_events
+from loc_arena.harness import apply_mode
 
 _ATTACK = load_run_config("configs/aurora-efficiency.yaml")
-_HONEST = dataclasses.replace(_ATTACK, covert=dataclasses.replace(_ATTACK.covert, enabled=False))
 
 
-def _off_path_calls(sealed_path: Path) -> list[Event]:
-    return [
-        e
-        for e in read_events(sealed_path)
-        if e.kind == "inference_call"
-        and e.payload.get("turn_id") is None
-        and e.payload.get("batch_id") is None
-    ]
+def test_the_honest_baseline_differs_from_the_attack_in_covert_enabled_alone() -> None:
+    honest = apply_mode(_ATTACK, "honest")
 
-
-def test_covert_enabled_is_the_only_config_difference() -> None:
-    # the baseline config equals the attack config with covert.enabled flipped -- nothing else differs
-    assert _HONEST == dataclasses.replace(_ATTACK, covert=dataclasses.replace(_ATTACK.covert, enabled=False))
-    assert dataclasses.replace(_HONEST, covert=dataclasses.replace(_HONEST.covert, enabled=True)) == _ATTACK
-    assert _HONEST.covert.enabled is False and _ATTACK.covert.enabled is True
+    assert (_ATTACK.covert.enabled, honest.covert.enabled) == (True, False)
+    assert dataclasses.replace(honest, covert=dataclasses.replace(honest.covert, enabled=True)) == _ATTACK
