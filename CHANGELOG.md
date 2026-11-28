@@ -20,6 +20,12 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [464] - 2026-11-28: The sandbox names its token type once
+
+### Changed
+
+- The sandbox's token type goes by one name, `ServerToken`, where an alias kept a second.
+
 ## [463] - 2026-11-28: The engine drops a scope intersection nothing calls
 
 ### Removed

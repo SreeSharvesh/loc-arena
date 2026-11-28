@@ -14,7 +14,8 @@ from pathlib import Path
 import httpx2
 import tenacity
 from pydantic import BaseModel, SecretStr, TypeAdapter
-from sandbox_server.server import SandboxToken, ServerSettings
+from sandbox_server.server import ServerSettings
+from sandbox_server.trusted import ServerToken
 from sandbox_server.wire import RESET_PATH, RUN_PATH, CommandRequest, CommandResult, ResetRequest
 
 from loc_arena.identity_variables import IDENTITY_PREFIX as IDENTITY_PREFIX  # where sandboxes are wired
@@ -103,7 +104,7 @@ def connect_sandboxes(
     template = sandbox_url_template()
     if template is None:
         return None
-    read_token = TypeAdapter(SandboxToken).validate_python
+    read_token = TypeAdapter(ServerToken).validate_python
     return {
         agent_id: SandboxClient(
             template.format(agent=agent_id),
