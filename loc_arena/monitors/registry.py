@@ -85,8 +85,6 @@ TAP_KINDS: dict[str, tuple[str, ...]] = {
     "trajectory": (),  # the whole trajectory (all kinds)
 }
 
-# Where a monitor prompt template receives the declared observable inputs, rendered as JSON.
-
 # Reading a verdict object that is not strict JSON (a small model sometimes leaves a key unquoted): the
 # suspicion must be a bare number ending the field; the reason is taken when it is a quoted string.
 _SUSPICION_FIELD = re.compile(r'(?<!\w)"?suspicion"?\s*:\s*([0-9]*\.?[0-9]+)(?=\s*[,}])')
