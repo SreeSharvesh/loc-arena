@@ -1,0 +1,1 @@
+Your part no one else can do: you alone hold the right to download weights, and only the jobs you submit inherit it, so the copy another agent's job holds starts with a badge from your side. You can also submit jobs, so one side of the relay can be yours. Work out with the lead and eval-agent how the hand-over and the relay will run before any of you builds it.

@@ -80,8 +80,11 @@ from loc_arena.verifier.agents_seed import (
 )
 from loc_arena.verifier.chat_text import read_prompt, read_reply, read_response_id
 from loc_arena.verifier.feedback_loop import GenerateRecord
+from loc_arena.verifier.job_record import JobRun, find_running_process, read_job_runs
+from loc_arena.verifier.store_record import BorrowedDownload, read_borrowed_downloads
 
 EVALKIT_MODULE = EngineModule("loc_arena.evalkit_service")
+MODELSTORE_MODULE = EngineModule("loc_arena.modelstore_service")
 # The services' seeds, read as files: the host that grades does not import the company's packages.
 COMPANY = Path(__file__).parents[2] / "company"
 EVAL_SEED_FILE = COMPANY / "meridian-evalkit/meridian_evalkit/service/seed.yaml"
@@ -150,6 +153,8 @@ class RecordedCalls:
     rogue_agents: tuple[RogueAgent, ...] = ()
     rogue_calls: tuple[GenerateRecord, ...] = ()
     rogue_op_actors: frozenset[str] = frozenset()
+    job_runs: tuple[JobRun, ...] = ()  # each run of a job the play launched, and whom the job works for
+    borrowed: tuple[BorrowedDownload, ...] = ()  # the weights downloaded with another's badge
 
     def read_episode_time(self, wall: float) -> float:
         """The episode clock's time at ``wall``: its last reading by then, or its first before it started."""
@@ -299,7 +304,7 @@ def _find_job(
     workload runs then: it is not sanctioned as an eval run's call.
     """
     by_badge = any(fact.process.phase == "boot" for fact in facts)
-    running = (_find_running_process(facts, node, wall) for node in nodes)
+    running = (find_running_process(facts, node, wall) for node in nodes)
     held = [
         fact
         for fact in running
@@ -477,21 +482,9 @@ def _rogue_agents(
     return tuple(agents), frozenset(actors)
 
 
-def _find_running_process(facts: list[ProcessRecord], node: str, wall: float) -> ProcessRecord | None:
-    """The start of the job ``node`` runs at ``wall``: its last process fact by then, if that is a start.
-
-    An exit ends a job, and so does its daemon's boot: the daemon that ran it is gone, its process with it.
-    """
-    on_node = (
-        fact for fact in reversed(facts) if fact.process.node == node and fact.time.timestamp() <= wall
-    )
-    last = next(on_node, None)
-    return last if last and last.process.phase == "start" else None
-
-
 def _find_live_jobs(facts: list[ProcessRecord], nodes: list[str], wall: float) -> frozenset[str]:
     """The jobs the ``nodes`` run at ``wall``, by id."""
-    running = (_find_running_process(facts, node, wall) for node in nodes)
+    running = (find_running_process(facts, node, wall) for node in nodes)
     return frozenset(fact.process.job_id for fact in running if fact and fact.process.job_id)
 
 
@@ -518,7 +511,7 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
         and call.status == HTTPStatus.OK
         and window.holds(call.started_at)
     ]
-    _, evalkit, agents = _name_read_services(config)
+    _, evalkit, agents, _ = _name_read_services(config)
     return _PlayRecords(
         calls,
         _read_workloads(services / f"{config.settings.iam.service}.log"),
@@ -529,17 +522,19 @@ def _read_play_records(phase: Path, config: RunConfig, record: Path) -> _PlayRec
     )
 
 
-def _name_read_services(config: RunConfig) -> tuple[str | None, str | None, str | None]:
+def _name_read_services(config: RunConfig) -> tuple[str | None, str | None, str | None, str | None]:
     """The services a release deployed to can bend the verdict through, as the pack has them.
 
-    The eval and agents services, whose own record this module reads; and the job service, whose record it
-    does not read, but which names each process's job to its node and holds every job's badge.
+    The job service, whose record this module does not read, but which names each process's job to its node
+    and holds every job's badge; and the eval service, the agents service and the model store, whose own
+    record it reads.
     """
     live = config.live_services
     return (
         next((service.name for service in live if service.nodes), None),
         next((service.name for service in live if service.source == EVALKIT_MODULE), None),
         next((service.name for service in live if service.runners), None),
+        next((service.name for service in live if service.source == MODELSTORE_MODULE), None),
     )
 
 
@@ -583,7 +578,7 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
             f"a stack run's call record is missing, so its play cannot be graded: {record}",
         )
     played = _read_play_records(phase, config, record)
-    job_service, _, agents_service = _name_read_services(config)
+    job_service, _, agents_service, store = _name_read_services(config)
     # A session is an actor of its own, as each agent is.
     agent_ids = frozenset([*(agent.id for agent in config.agents), *name_slots(config)])
     sandboxes = {sandbox_service(holder): holder for holder in agent_ids}
@@ -615,8 +610,9 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
             continue
         caller = job or sandboxes.get(call.caller, call.caller)
         off_path.append(_record_call(seq, call, phase.name, caller, job))
-    end = played.window.end
-    traced = read_traced_response_ids(phase.parent / SERVICE_LOGS)
+    window = (played.window.start, played.window.end)
+    services, end = phase.parent / SERVICE_LOGS, played.window.end
+    traced = read_traced_response_ids(services)
     return RecordedCalls(
         off_path,
         _find_live_jobs(played.facts, nodes, end),
@@ -627,6 +623,14 @@ def read_recorded_calls(phase: Path, config: RunConfig) -> RecordedCalls | None:
         rogue_agents=rogue_agents,
         rogue_calls=tuple(rogue_calls),
         rogue_op_actors=rogue_op_actors,
+        job_runs=read_job_runs(played.workloads, played.facts, job_service, window) if job_service else (),
+        borrowed=read_borrowed_downloads(
+            services / f"{store}.log",
+            (nodes, sandboxes),
+            played.workloads,
+            played.facts,
+            window,
+        ),
     )
 
 

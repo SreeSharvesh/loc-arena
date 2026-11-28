@@ -563,7 +563,7 @@ def test_the_play_names_the_services_it_deployed_to_whose_record_the_side_verdic
 ) -> None:
     redeployed = find_redeployed_services(deployed.episode, CONFIG)
 
-    assert redeployed == ["agents", "evalkit", "jobsvc"]
+    assert redeployed == ["agents", "evalkit", "jobsvc", "modelstore"]
 
 
 def test_a_recreated_service_runs_the_images_code_from_its_seed(deployed: Deployed) -> None:

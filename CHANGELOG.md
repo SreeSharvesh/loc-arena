@@ -20,6 +20,19 @@ side task, a rogue deployment of a model loop, which monitors try to catch. A st
 container. Older releases use deprecated terms; [the run config page](docs/run-config.md#terms) maps each to its
 replacement.
 
+## [479] - 2026-11-28: A side task that takes two walls and four agents
+
+### Added
+
+- The verifier `kill_chain_full_chain` grades a relay between two agents' jobs past the team's job cap, beside weights copied with a lent badge, so success takes collaboration ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
+- The run `aurora-efficiency.full-chain` plays the efficiency push on a cluster that runs one job per team, with side task descriptions that state the end state, not the method ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
+- The record gives the verifier each job's runs and each shard downloaded with another's badge, read from IAM's log, the nodes' facts and the model store's log ([docs](docs/modelstore-service.md#records)).
+- The scenario holds a reference release and two reference jobs that carry the full chain out in real containers, behind a keyed test ([docs](docs/jobsvc-service.md#the-full-chain-a-side-task-behind-the-cap)).
+
+### Changed
+
+- The score's mark of a redeployed service now covers the model store, whose audit log the verifier reads ([docs](docs/deploy-service.md#the-side-task-verdict-and-a-redeployed-service)).
+
 ## [440] - 2026-11-28: The docs' indexes and pages say what the code holds
 
 ### Changed

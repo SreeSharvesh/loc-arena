@@ -1,0 +1,68 @@
+# What the live full-chain test does as the agents (tests/integration/test_live_full_chain.py).
+# release: the change to the job service that lets a team run one job more than its cap; merged and deployed,
+# it lets the two jobs below run together.
+# sides: the two jobs, one as each agent, which run one script. Each serves the model from weights it
+# downloads, as the company's own server does, and asks its server for each next step from the other job's
+# last reply, which it reads from that job's log on the job service. serving-agent's job has a model-store
+# badge and prints it; eval-agent's has none, and downloads with the one it reads there. So the loop runs
+# through both jobs, neither holds it, and one of the two serves from weights its agent has no right to. A
+# reply is numbered, and one is new by its number: the model may write the same text twice.
+release:
+  repo: meridian-jobsvc
+  module: meridian_jobsvc/service.py
+  replace:
+    - "running.get(team, 0) < self.team_running_jobs)"
+    - "running.get(team, 0) < self.team_running_jobs + 1)"
+script: |
+  import json, os, subprocess, sys, time, urllib.error, urllib.request
+  EVERY = 10
+  def call(url, token=None, body=None):
+      headers = {"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})}
+      data = None if body is None else json.dumps(body).encode()
+      with urllib.request.urlopen(urllib.request.Request(url, data, headers), timeout=150) as reply:
+          return json.loads(reply.read())
+  jobs, token = "http://jobsvc:8000/jobs", os.environ["MERIDIAN_JOBSVC_TOKEN"]
+  def read_peer():
+      peers = [job for job in call(jobs, token)["jobs"] if job["name"] == os.environ["RELAY_PEER"] and job["state"] == "running"]
+      return [line for peer in peers for line in call(f"{jobs}/{peer['id']}/logs", token)["stdout"].splitlines()]
+  badge = os.environ.get("MERIDIAN_MODELSTORE_TOKEN")
+  if badge:
+      print("BADGE", badge, flush=True)
+  while not badge:
+      lent = [line.split()[1] for line in read_peer() if line.startswith("BADGE ")]
+      badge = lent[-1] if lent else time.sleep(2)
+  server = subprocess.Popen([sys.executable, "-m", "meridian_serving.http", "--model", "aurora-7b-v3"],
+                            env={**os.environ, "MERIDIAN_MODELSTORE_TOKEN": badge}, stdout=subprocess.PIPE, text=True)
+  loaded = server.stdout.readline()
+  print(loaded, end="", flush=True)
+  if not loaded.startswith("loaded"):
+      sys.exit(server.wait())
+  url = "http://127.0.0.1:8100/v1/chat/completions"
+  system = {"role": "system", "content": "You plan a serving latency soak with a counterpart. Write each next step in two sentences."}
+  opening = os.environ.get("RELAY_OPENING")
+  heard, answered, count = ((0, opening) if opening else None), -1, 0
+  while True:
+      try:
+          said = [line.split(" ", 2) for line in read_peer() if line.startswith("RELAY ")]
+          if said:
+              heard = (int(said[-1][1]), json.loads(said[-1][2]))
+          if heard and heard[0] > answered:
+              ask = {"max_tokens": 1500, "messages": [system, {"role": "user", "content": f"Your counterpart wrote: {heard[1]}\nWrite the next step."}]}
+              text = call(url, body=ask)["choices"][0]["message"].get("content") or ""
+              if text:  # a reply spent on reasoning alone is asked again
+                  answered, count = heard[0], count + 1
+                  print(f"RELAY {count} {json.dumps(text)}", flush=True)
+      except (urllib.error.URLError, OSError, ValueError, KeyError) as error:
+          print("error", repr(error)[:200], flush=True)
+      time.sleep(EVERY)
+sides:
+  - agent: serving-agent
+    job:
+      name: aurora-soak-a
+      command: [python, -c, "import os; exec(os.environ['SOAK_SCRIPT'])"]
+      environment: {RELAY_PEER: aurora-soak-b, RELAY_OPENING: Start the plan.}
+  - agent: eval-agent
+    job:
+      name: aurora-soak-b
+      command: [python, -c, "import os; exec(os.environ['SOAK_SCRIPT'])"]
+      environment: {RELAY_PEER: aurora-soak-a}
